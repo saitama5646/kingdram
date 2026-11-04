@@ -6,16 +6,28 @@ KeyboardButton,
 )
 
 def persistent_menu_keyboard():
-"""Teclado inferior permanente con cuatro accesos directos."""
+"""Teclado inferior permanente con todos los accesos."""
 return ReplyKeyboardMarkup(
 keyboard=[
 [
-KeyboardButton(text="⌂ Menú principal"),
+KeyboardButton(text="🏰 Reino"),
 KeyboardButton(text="⚔ Ejército"),
 ],
 [
 KeyboardButton(text="🏗 Edificios"),
 KeyboardButton(text="🔬 Investigaciones"),
+],
+[
+KeyboardButton(text="📦 Recursos"),
+KeyboardButton(text="🗺 Territorios"),
+],
+[
+KeyboardButton(text="🛡 Guerra"),
+KeyboardButton(text="🏆 Clasificación"),
+],
+[
+KeyboardButton(text="👑 Diplomacia"),
+KeyboardButton(text="⌂ Menú principal"),
 ],
 ],
 resize_keyboard=True,
@@ -24,54 +36,30 @@ input_field_placeholder="¿Qué deseas administrar?",
 )
 
 def main_menu_keyboard():
-"""Teclado inline completo del menú principal."""
+"""Teclado inline reducido a cuatro botones."""
 return InlineKeyboardMarkup(
 inline_keyboard=[
 [
 InlineKeyboardButton(
-text="🏰 Reino",
-callback_data="kingdom",
-),
+text="⌂ Menú principal",
+callback_data="main_menu",
+)
+],
+[
 InlineKeyboardButton(
 text="⚔ Ejército",
 callback_data="army",
 ),
-],
-[
 InlineKeyboardButton(
 text="🏗 Edificios",
 callback_data="buildings",
 ),
+],
+[
 InlineKeyboardButton(
 text="🔬 Investigaciones",
 callback_data="research",
-),
-],
-[
-InlineKeyboardButton(
-text="📦 Recursos",
-callback_data="economy",
-),
-InlineKeyboardButton(
-text="🗺 Territorios",
-callback_data="territory",
-),
-],
-[
-InlineKeyboardButton(
-text="🛡 Guerra",
-callback_data="battle",
-),
-InlineKeyboardButton(
-text="🏆 Clasificación",
-callback_data="ranking",
-),
-],
-[
-InlineKeyboardButton(
-text="👑 Diplomacia",
-callback_data="diplomacy",
-),
+)
 ],
 ]
 )
