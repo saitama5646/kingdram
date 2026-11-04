@@ -65,6 +65,7 @@ callback_data="research",
 )
 
 def create_realm_keyboard():
+"""Teclado para fundar un reino."""
 return InlineKeyboardMarkup(
 inline_keyboard=[
 [
@@ -77,6 +78,7 @@ callback_data="create_realm",
 )
 
 def back_to_menu_keyboard():
+"""Botón para regresar al menú principal."""
 return InlineKeyboardMarkup(
 inline_keyboard=[
 [
