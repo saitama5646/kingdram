@@ -12,11 +12,6 @@ PAGES = {
         "Aquí podrás administrar las construcciones "
         "y mejorar la infraestructura de tu reino."
     ),
-    "territory": (
-        "🗺 Territorios",
-        "Aquí podrás consultar tus provincias "
-        "y expandir tus dominios."
-    ),
     "army": (
         "⚔ Ejército",
         "Aquí podrás reclutar, entrenar "
