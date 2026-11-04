@@ -11,6 +11,85 @@ from bot.keyboards.main_menu import (
 router = Router()
 
 
+async def ensure_realm_resources(connection, realm_id):
+    await connection.execute(
+        """
+        INSERT INTO resources (
+            realm_id,
+            wood,
+            stone,
+            gold,
+            food
+        )
+        VALUES ($1, 1250, 850, 2400, 1600)
+        ON CONFLICT (realm_id) DO NOTHING
+        """,
+        realm_id
+    )
+
+
+async def show_kingdom(callback: CallbackQuery):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        realm = await connection.fetchrow(
+            """
+            SELECT
+                id,
+                name,
+                level,
+                population,
+                power
+            FROM realms
+            WHERE owner_id = $1
+            """,
+            callback.from_user.id
+        )
+
+        if not realm:
+            await callback.answer(
+                "Primero debes fundar tu reino.",
+                show_alert=True
+            )
+
+            await callback.message.edit_text(
+                "🏰 <b>Aún no posees un reino.</b>\n\n"
+                "Funda tu primer dominio para comenzar "
+                "a desarrollar tus tierras.",
+                reply_markup=create_realm_keyboard()
+            )
+            return
+
+        await ensure_realm_resources(
+            connection,
+            realm["id"]
+        )
+
+        resources = await connection.fetchrow(
+            """
+            SELECT wood, stone, gold, food
+            FROM resources
+            WHERE realm_id = $1
+            """,
+            realm["id"]
+        )
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        f"🏰 <b>{realm['name']}</b>\n\n"
+        f"⭐ Nivel: {realm['level']}\n"
+        f"👥 Población: {realm['population']:,}\n"
+        f"⚔ Poder: {realm['power']:,}\n\n"
+        "<b>Recursos disponibles</b>\n"
+        f"🪵 Madera: {resources['wood']:,}\n"
+        f"🪨 Piedra: {resources['stone']:,}\n"
+        f"🪙 Oro: {resources['gold']:,}\n"
+        f"🌾 Alimentos: {resources['food']:,}",
+        reply_markup=main_menu_keyboard()
+    )
+
+
 @router.callback_query(F.data == "create_realm")
 async def create_realm_handler(callback: CallbackQuery):
     pool = await get_pool()
@@ -44,135 +123,76 @@ async def create_realm_handler(callback: CallbackQuery):
             )
 
             if realm:
-                await callback.answer(
-                    "Ya posees un reino.",
-                    show_alert=True
+                await ensure_realm_resources(
+                    connection,
+                    realm["id"]
                 )
 
-                await callback.message.edit_text(
-                    f"🏰 <b>Reino de {realm['name']}</b>\n\n"
-                    "Tu dominio ya ha sido fundado.",
-                    reply_markup=main_menu_keyboard()
+            else:
+                realm_name = f"Reino de {user.first_name}"
+
+                realm = await connection.fetchrow(
+                    """
+                    INSERT INTO realms (
+                        owner_id,
+                        name
+                    )
+                    VALUES ($1, $2)
+                    RETURNING id, name
+                    """,
+                    user.id,
+                    realm_name
                 )
-                return
 
-            realm_name = f"Reino de {user.first_name}"
+                realm_id = realm["id"]
 
-            realm = await connection.fetchrow(
-                """
-                INSERT INTO realms (
-                    owner_id,
-                    name
+                await ensure_realm_resources(
+                    connection,
+                    realm_id
                 )
-                VALUES ($1, $2)
-                RETURNING id, name
-                """,
-                user.id,
-                realm_name
-            )
 
-            realm_id = realm["id"]
-
-            await connection.execute(
-                """
-                INSERT INTO resources (
-                    realm_id,
-                    wood,
-                    stone,
-                    gold,
-                    food
+                await connection.execute(
+                    """
+                    INSERT INTO buildings (
+                        realm_id,
+                        building_type,
+                        level
+                    )
+                    VALUES
+                        ($1, 'sawmill', 1),
+                        ($1, 'quarry', 1),
+                        ($1, 'farm', 1)
+                    ON CONFLICT (realm_id, building_type)
+                    DO NOTHING
+                    """,
+                    realm_id
                 )
-                VALUES ($1, 1250, 850, 2400, 1600)
-                """,
-                realm_id
-            )
 
-            await connection.execute(
-                """
-                INSERT INTO buildings (
-                    realm_id,
-                    building_type,
-                    level
+                await connection.execute(
+                    """
+                    INSERT INTO provinces (
+                        realm_id,
+                        name,
+                        province_number
+                    )
+                    VALUES (
+                        $1,
+                        'Tierras de la Corona',
+                        1
+                    )
+                    ON CONFLICT (realm_id, province_number)
+                    DO NOTHING
+                    """,
+                    realm_id
                 )
-                VALUES
-                    ($1, 'sawmill', 1),
-                    ($1, 'quarry', 1),
-                    ($1, 'farm', 1)
-                """,
-                realm_id
-            )
 
-            await connection.execute(
-                """
-                INSERT INTO provinces (
-                    realm_id,
-                    name,
-                    province_number
-                )
-                VALUES ($1, 'Tierras de la Corona', 1)
-                """,
-                realm_id
-            )
-
-    await callback.answer("¡Tu reino ha sido fundado!")
-
-    await callback.message.edit_text(
-        "👑 <b>¡Tu reino ha sido fundado!</b>\n\n"
-        f"🏰 Nombre: <b>{realm_name}</b>\n"
-        "🗺 Provincia inicial: Tierras de la Corona\n\n"
-        "Tus tierras están listas para desarrollarse.\n"
-        "Administra tus recursos y comienza a construir "
-        "tu imperio.",
-        reply_markup=main_menu_keyboard()
+    await callback.answer(
+        "Tu reino ya está disponible."
     )
+
+    await show_kingdom(callback)
 
 
 @router.callback_query(F.data == "kingdom")
 async def kingdom_handler(callback: CallbackQuery):
-    pool = await get_pool()
-
-    async with pool.acquire() as connection:
-        realm = await connection.fetchrow(
-            """
-            SELECT
-                r.name,
-                r.level,
-                r.population,
-                r.power,
-                p.wood,
-                p.stone,
-                p.gold,
-                p.food
-            FROM realms r
-            JOIN resources p ON p.realm_id = r.id
-            WHERE r.owner_id = $1
-            """,
-            callback.from_user.id
-        )
-
-    if not realm:
-        await callback.answer(
-            "Primero debes fundar tu reino.",
-            show_alert=True
-        )
-
-        await callback.message.edit_text(
-            "🏰 <b>Aún no posees un reino.</b>",
-            reply_markup=create_realm_keyboard()
-        )
-        return
-
-    await callback.answer()
-
-    await callback.message.edit_text(
-        f"🏰 <b>{realm['name']}</b>\n\n"
-        f"⭐ Nivel: {realm['level']}\n"
-        f"👥 Población: {realm['population']}\n"
-        f"⚔ Poder: {realm['power']}\n\n"
-        "<b>Recursos disponibles</b>\n"
-        f"🪵 Madera: {realm['wood']:,}\n"
-        f"🪨 Piedra: {realm['stone']:,}\n"
-        f"🪙 Oro: {realm['gold']:,}\n"
-        f"🌾 Alimentos: {realm['food']:,}",
-        reply_markup=main_menu_keyboard()
-    )
+    await show_kingdom(callback)
