@@ -1,4 +1,3 @@
-
 from html import escape
 
 from aiogram import Router, F
@@ -6,8 +5,11 @@ from aiogram.types import CallbackQuery
 
 from bot.services.scoring import (
     refresh_all_scores,
-    get_ranking
+    get_ranking,
 )
+
+from bot.keyboards.main_menu import back_to_menu_keyboard
+
 
 router = Router()
 
@@ -26,7 +28,8 @@ async def ranking_handler(callback: CallbackQuery):
     if not ranking:
         await callback.message.edit_text(
             "🏆 <b>CLASIFICACIÓN DE KINGDRAM</b>\n\n"
-            "Todavía no existen reinos clasificados."
+            "Todavía no existen reinos clasificados.",
+            reply_markup=back_to_menu_keyboard(),
         )
         return
 
@@ -34,7 +37,7 @@ async def ranking_handler(callback: CallbackQuery):
         "🏆 <b>CLASIFICACIÓN DE KINGDRAM</b>",
         "",
         "<i>Los diez dominios más poderosos.</i>",
-        ""
+        "",
     ]
 
     medals = ("🥇", "🥈", "🥉")
@@ -42,18 +45,26 @@ async def ranking_handler(callback: CallbackQuery):
 
     for index, item in enumerate(ranking):
         position = index + 1
-        medal = medals[index] if index < 3 else f"{position}."
+        medal = (
+            medals[index]
+            if index < 3
+            else f"{position}."
+        )
+
         name = escape(item["name"])
 
         lines.extend([
             f"{medal} <b>{name}</b>",
-            f"   Puntos: <b>{format_number(item['total_points'])}</b>",
+            (
+                "   Puntos: "
+                f"<b>{format_number(item['total_points'])}</b>"
+            ),
             (
                 f"   🏗 {format_number(item['building_points'])}"
                 f" | ⚔ {format_number(item['military_points'])}"
                 f" | 📚 {format_number(item['research_points'])}"
             ),
-            ""
+            "",
         ])
 
         if item["owner_id"] == callback.from_user.id:
@@ -68,10 +79,11 @@ async def ranking_handler(callback: CallbackQuery):
         "",
         "<i>La puntuación se basa en la inversión "
         "acumulada en infraestructura y ejército, "
-        "además del progreso tecnológico.</i>"
+        "además del progreso tecnológico.</i>",
     ])
 
     await callback.message.edit_text(
         "\n".join(lines),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=back_to_menu_keyboard(),
     )

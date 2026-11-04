@@ -1,5 +1,7 @@
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 
 from bot.services.construction import BUILDINGS
 
@@ -12,7 +14,7 @@ def buildings_keyboard(levels=None, pending_type=None):
         level = levels.get(building_type, 0)
 
         if pending_type == building_type:
-            status = " · En construcción"
+            status = " · ⏳ En construcción"
         elif level > 0:
             status = f" · Nivel {level}"
         else:
@@ -20,55 +22,60 @@ def buildings_keyboard(levels=None, pending_type=None):
 
         rows.append([
             InlineKeyboardButton(
-                text=f"{building['icon']} {building['name']}{status}",
-                callback_data=f"building:{building_type}"
+                text=(
+                    f"{building['icon']} "
+                    f"{building['name']}{status}"
+                ),
+                callback_data=f"building:{building_type}",
             )
         ])
 
     rows.append([
         InlineKeyboardButton(
             text="↩ Menú principal",
-            callback_data="main_menu"
+            callback_data="main_menu",
         )
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
+    )
 
 
 def building_detail_keyboard(
     building_type,
     level=0,
-    pending=False
+    pending=False,
 ):
     rows = []
 
     if not pending:
-        action = (
-            "⚒ Construir edificio"
-            if level == 0
-            else "⬆ Mejorar edificio"
-        )
+        if level == 0:
+            action = "⚒ Construir edificio"
+        else:
+            action = "⬆ Mejorar edificio"
 
         rows.append([
             InlineKeyboardButton(
                 text=action,
-                callback_data=f"upgrade:{building_type}"
+                callback_data=f"upgrade:{building_type}",
             )
         ])
 
-    rows.extend([
-        [
-            InlineKeyboardButton(
-                text="↩ Volver a edificios",
-                callback_data="buildings"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="Menú principal",
-                callback_data="main_menu"
-            )
-        ]
+    rows.append([
+        InlineKeyboardButton(
+            text="↩ Volver a edificios",
+            callback_data="buildings",
+        )
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    rows.append([
+        InlineKeyboardButton(
+            text="⌂ Menú principal",
+            callback_data="main_menu",
+        )
+    ])
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
+    )

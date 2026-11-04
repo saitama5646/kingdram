@@ -1,4 +1,40 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+
+
+def persistent_menu_keyboard():
+    """Teclado permanente con acceso directo a las pantallas del juego."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="🏰 Reino"),
+                KeyboardButton(text="⚔ Ejército"),
+            ],
+            [
+                KeyboardButton(text="🏗 Edificios"),
+                KeyboardButton(text="🔬 Investigaciones"),
+            ],
+            [
+                KeyboardButton(text="📦 Recursos"),
+                KeyboardButton(text="🗺 Territorios"),
+            ],
+            [
+                KeyboardButton(text="🛡 Guerra"),
+                KeyboardButton(text="🏆 Clasificación"),
+            ],
+            [
+                KeyboardButton(text="👑 Diplomacia"),
+                KeyboardButton(text="⌂ Menú principal"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="¿Qué deseas administrar?",
+    )
 
 
 def main_menu_keyboard():

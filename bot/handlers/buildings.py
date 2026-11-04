@@ -1,6 +1,6 @@
-
 import math
 from datetime import datetime, timezone
+from html import escape
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
@@ -9,52 +9,75 @@ from bot.database.connection import get_pool
 from bot.services.construction import (
     BUILDINGS,
     get_upgrade_cost,
-    get_upgrade_time
+    get_upgrade_time,
 )
 from bot.keyboards.buildings import (
     buildings_keyboard,
-    building_detail_keyboard
+    building_detail_keyboard,
 )
+from bot.keyboards.main_menu import back_to_menu_keyboard
+
 
 router = Router()
 
 
 RESOURCE_LABELS = {
-    "wood": "Madera",
-    "stone": "Piedra",
-    "gold": "Oro",
-    "food": "Alimentos"
+    "wood": "🪵 Madera",
+    "stone": "🪨 Piedra",
+    "gold": "🪙 Oro",
+    "food": "🌾 Alimentos",
 }
 
 
 def format_cost(cost):
-    return "\n".join(
-        f"{RESOURCE_LABELS[resource]}: {amount:,}"
-        for resource, amount in cost.items()
-    )
+    """Devuelve el coste con el emoji correspondiente a cada recurso."""
+    lines = []
 
-
-def format_remaining(value):
-    seconds = max(
-        0,
-        math.ceil(
-            (value - datetime.now(timezone.utc)).total_seconds()
+    for resource, amount in cost.items():
+        label = RESOURCE_LABELS.get(
+            resource,
+            resource.capitalize(),
         )
-    )
+        lines.append(f"{label}: <b>{amount:,}</b>")
+
+    return "\n".join(lines)
+
+
+def format_duration(seconds):
+    """Convierte segundos en un texto legible."""
+    seconds = max(0, int(seconds))
 
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
 
+    parts = []
+
     if hours:
-        return f"{hours} h {minutes} min"
+        parts.append(f"{hours} h")
 
     if minutes:
-        return f"{minutes} min {seconds} s"
+        parts.append(f"{minutes} min")
 
-    return f"{seconds} s"
+    if seconds or not parts:
+        parts.append(f"{seconds} s")
+
+    return " ".join(parts)
 
 
-async def render_buildings(callback):
+def format_remaining(finishes_at):
+    """Calcula cuánto falta para terminar una construcción."""
+    if finishes_at.tzinfo is None:
+        finishes_at = finishes_at.replace(tzinfo=timezone.utc)
+
+    remaining = math.ceil(
+        (finishes_at - datetime.now(timezone.utc)).total_seconds()
+    )
+
+    return format_duration(remaining)
+
+
+async def get_realm_building_data(user_id):
+    """Obtiene el reino, sus edificios y la construcción pendiente."""
     pool = await get_pool()
 
     async with pool.acquire() as connection:
@@ -64,16 +87,11 @@ async def render_buildings(callback):
             FROM realms
             WHERE owner_id = $1
             """,
-            callback.from_user.id
+            user_id,
         )
 
         if not realm:
-            await callback.message.edit_text(
-                "🏰 <b>Aún no tienes un reino.</b>\n\n"
-                "Funda tu dominio para comenzar "
-                "a construir."
-            )
-            return
+            return None, [], None
 
         buildings = await connection.fetch(
             """
@@ -81,7 +99,7 @@ async def render_buildings(callback):
             FROM buildings
             WHERE realm_id = $1
             """,
-            realm["id"]
+            realm["id"],
         )
 
         pending = await connection.fetchrow(
@@ -92,8 +110,24 @@ async def render_buildings(callback):
             ORDER BY finishes_at
             LIMIT 1
             """,
-            realm["id"]
+            realm["id"],
         )
+
+    return realm, buildings, pending
+
+
+async def render_buildings(callback):
+    realm, buildings, pending = await get_realm_building_data(
+        callback.from_user.id
+    )
+
+    if not realm:
+        await callback.message.edit_text(
+            "🏰 <b>Aún no tienes un reino.</b>\n\n"
+            "Funda tu dominio para comenzar a construir.",
+            reply_markup=back_to_menu_keyboard(),
+        )
+        return
 
     levels = {
         item["building_type"]: item["level"]
@@ -103,39 +137,51 @@ async def render_buildings(callback):
     lines = [
         "🏗 <b>INFRAESTRUCTURA DEL REINO</b>",
         "",
-        f"🏰 Dominio: <b>{realm['name']}</b>",
+        f"🏰 Dominio: <b>{escape(realm['name'])}</b>",
         "",
-        "Selecciona un edificio para consultar "
-        "sus características, construirlo o mejorarlo."
+        "Selecciona un edificio para consultar sus "
+        "características, construirlo o mejorarlo.",
     ]
 
     if pending:
-        info = BUILDINGS.get(
+        pending_info = BUILDINGS.get(
             pending["building_type"],
-            {}
+            {},
         )
+
+        pending_name = escape(
+            pending_info.get(
+                "name",
+                pending["building_type"],
+            )
+        )
+
+        pending_icon = pending_info.get("icon", "🏗")
 
         lines.extend([
             "",
             "⏳ <b>CONSTRUCCIÓN EN CURSO</b>",
-            f"{info.get('icon', '🏗')} "
-            f"{info.get('name', pending['building_type'])}",
-            f"Nivel objetivo: {pending['target_level']}",
-            f"Tiempo restante: "
-            f"{format_remaining(pending['finishes_at'])}"
+            f"{pending_icon} {pending_name}",
+            f"Nivel objetivo: <b>{pending['target_level']}</b>",
+            (
+                "Tiempo restante: "
+                f"<b>{format_remaining(pending['finishes_at'])}</b>"
+            ),
         ])
     else:
         lines.extend([
             "",
-            "✅ No tienes construcciones pendientes."
+            "✅ No tienes construcciones pendientes.",
         ])
 
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=buildings_keyboard(
-            levels,
-            pending["building_type"] if pending else None
-        )
+            levels=levels,
+            pending_type=(
+                pending["building_type"] if pending else None
+            ),
+        ),
     )
 
 
@@ -153,7 +199,7 @@ async def building_detail_handler(callback: CallbackQuery):
     if not info:
         await callback.answer(
             "Edificio desconocido.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -166,13 +212,13 @@ async def building_detail_handler(callback: CallbackQuery):
             FROM realms
             WHERE owner_id = $1
             """,
-            callback.from_user.id
+            callback.from_user.id,
         )
 
         if not realm:
             await callback.answer(
-                "Primero debes fundar un reino.",
-                show_alert=True
+                "Primero debes fundar tu reino.",
+                show_alert=True,
             )
             return
 
@@ -184,7 +230,7 @@ async def building_detail_handler(callback: CallbackQuery):
               AND building_type = $2
             """,
             realm["id"],
-            building_type
+            building_type,
         )
 
         pending = await connection.fetchrow(
@@ -195,7 +241,7 @@ async def building_detail_handler(callback: CallbackQuery):
             ORDER BY finishes_at
             LIMIT 1
             """,
-            realm["id"]
+            realm["id"],
         )
 
     level = building["level"] if building else 0
@@ -203,44 +249,54 @@ async def building_detail_handler(callback: CallbackQuery):
 
     cost = get_upgrade_cost(
         building_type,
-        next_level
+        next_level,
     )
 
     duration = get_upgrade_time(
         building_type,
-        next_level
+        next_level,
     )
 
-    action = "Construcción" if level == 0 else "Mejora"
+    action = "construcción" if level == 0 else "mejora"
 
     lines = [
-        f"{info['icon']} <b>{info['name'].upper()}</b>",
+        f"{info['icon']} <b>{escape(info['name'].upper())}</b>",
         "",
-        info["description"],
+        escape(info["description"]),
         "",
-        f"Nivel actual: {level}",
-        f"Nivel objetivo: {next_level}",
+        f"Nivel actual: <b>{level}</b>",
+        f"Nivel objetivo: <b>{next_level}</b>",
         "",
-        f"<b>Coste de {action.lower()}</b>",
+        f"<b>Coste de {action}</b>",
         format_cost(cost),
         "",
-        f"Tiempo: {duration // 60} min "
-        f"{duration % 60} s"
+        f"⏱ Tiempo: <b>{format_duration(duration)}</b>",
     ]
 
     if pending:
         pending_info = BUILDINGS.get(
             pending["building_type"],
-            {}
+            {},
         )
+
+        pending_name = escape(
+            pending_info.get(
+                "name",
+                pending["building_type"],
+            )
+        )
+
+        pending_icon = pending_info.get("icon", "🏗")
 
         lines.extend([
             "",
             "⏳ <b>COLA DE CONSTRUCCIÓN</b>",
-            f"Edificio: {pending_info.get('name', pending['building_type'])}",
-            f"Nivel objetivo: {pending['target_level']}",
-            f"Tiempo restante: "
-            f"{format_remaining(pending['finishes_at'])}"
+            f"{pending_icon} Edificio: <b>{pending_name}</b>",
+            f"Nivel objetivo: <b>{pending['target_level']}</b>",
+            (
+                "Tiempo restante: "
+                f"<b>{format_remaining(pending['finishes_at'])}</b>"
+            ),
         ])
 
     await callback.answer()
@@ -248,10 +304,10 @@ async def building_detail_handler(callback: CallbackQuery):
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=building_detail_keyboard(
-            building_type,
-            level,
-            bool(pending)
-        )
+            building_type=building_type,
+            level=level,
+            pending=bool(pending),
+        ),
     )
 
 
@@ -262,7 +318,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
     if building_type not in BUILDINGS:
         await callback.answer(
             "Edificio desconocido.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -278,7 +334,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
                 WHERE owner_id = $1
                 FOR UPDATE
                 """,
-                callback.from_user.id
+                callback.from_user.id,
             )
 
             if not realm:
@@ -295,16 +351,16 @@ async def upgrade_building_handler(callback: CallbackQuery):
                     LIMIT 1
                     FOR UPDATE
                     """,
-                    realm_id
+                    realm_id,
                 )
 
                 if pending:
                     pending_name = BUILDINGS.get(
                         pending["building_type"],
-                        {}
+                        {},
                     ).get(
                         "name",
-                        pending["building_type"]
+                        pending["building_type"],
                     )
 
                     error_message = (
@@ -322,7 +378,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
                         FOR UPDATE
                         """,
                         realm_id,
-                        building_type
+                        building_type,
                     )
 
                     current_level = (
@@ -333,12 +389,12 @@ async def upgrade_building_handler(callback: CallbackQuery):
 
                     cost = get_upgrade_cost(
                         building_type,
-                        target_level
+                        target_level,
                     )
 
                     duration = get_upgrade_time(
                         building_type,
-                        target_level
+                        target_level,
                     )
 
                     resources = await connection.fetchrow(
@@ -348,7 +404,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
                         WHERE realm_id = $1
                         FOR UPDATE
                         """,
-                        realm_id
+                        realm_id,
                     )
 
                     if not resources:
@@ -358,15 +414,18 @@ async def upgrade_building_handler(callback: CallbackQuery):
 
                     else:
                         insufficient = [
-                            RESOURCE_LABELS[resource]
+                            RESOURCE_LABELS.get(
+                                resource,
+                                resource.capitalize(),
+                            )
                             for resource, amount in cost.items()
                             if resources[resource] < amount
                         ]
 
                         if insufficient:
                             error_message = (
-                                "Recursos insuficientes: "
-                                + ", ".join(insufficient)
+                                "Recursos insuficientes:\n"
+                                + "\n".join(insufficient)
                             )
 
                         else:
@@ -383,7 +442,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
                                 cost.get("stone", 0),
                                 cost.get("gold", 0),
                                 cost.get("food", 0),
-                                realm_id
+                                realm_id,
                             )
 
                             await connection.execute(
@@ -404,13 +463,13 @@ async def upgrade_building_handler(callback: CallbackQuery):
                                 realm_id,
                                 building_type,
                                 target_level,
-                                duration
+                                duration,
                             )
 
     if error_message:
         await callback.answer(
             error_message,
-            show_alert=True
+            show_alert=True,
         )
         return
 

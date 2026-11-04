@@ -1,4 +1,7 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 
 
 def battle_targets_keyboard(targets):
@@ -7,19 +10,26 @@ def battle_targets_keyboard(targets):
     for target in targets:
         rows.append([
             InlineKeyboardButton(
-                text=f"🏰 {target['name']} · Poder {target['power']:,}",
+                text=(
+                    f"🏰 {target['name']} "
+                    f"· Poder {target['power']:,}"
+                ),
                 callback_data=f"battle:target:{target['id']}",
             )
         ])
 
-    rows.append([
-        InlineKeyboardButton(
-            text="↩ Volver",
-            callback_data="army",
-        )
+    rows.extend([
+        [
+            InlineKeyboardButton(
+                text="↩ Menú principal",
+                callback_data="main_menu",
+            )
+        ],
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
+    )
 
 
 def battle_confirm_keyboard(realm_id):
@@ -35,6 +45,12 @@ def battle_confirm_keyboard(realm_id):
                 InlineKeyboardButton(
                     text="↩ Cancelar",
                     callback_data="battle",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⌂ Menú principal",
+                    callback_data="main_menu",
                 )
             ],
         ]
@@ -54,6 +70,12 @@ def battle_back_keyboard():
                 InlineKeyboardButton(
                     text="🏰 Mi ejército",
                     callback_data="army",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⌂ Menú principal",
+                    callback_data="main_menu",
                 )
             ],
         ]
