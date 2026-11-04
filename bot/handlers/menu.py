@@ -7,11 +7,6 @@ from bot.keyboards.main_menu import main_menu_keyboard
 router = Router()
 
 PAGES = {
-    "economy": (
-        "📦 Economía",
-        "Aquí podrás consultar la producción, "
-        "el consumo y el almacenamiento de recursos."
-    ),
     "buildings": (
         "🏗 Edificios",
         "Aquí podrás administrar las construcciones "

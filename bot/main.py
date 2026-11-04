@@ -15,6 +15,7 @@ from bot.handlers.start import router as start_router
 from bot.handlers.kingdom import router as kingdom_router
 from bot.handlers.buildings import router as buildings_router
 from bot.handlers.army import router as army_router
+from bot.handlers.economy import router as economy_router
 from bot.handlers.menu import router as menu_router
 
 from bot.workers.production import production_worker
@@ -40,6 +41,7 @@ async def main():
         dp.include_router(kingdom_router)
         dp.include_router(buildings_router)
         dp.include_router(army_router)
+        dp.include_router(economy_router)
         dp.include_router(menu_router)
 
         workers.append(
@@ -60,6 +62,7 @@ async def main():
         print("Producción automática iniciada.")
         print("Sistema de construcción iniciado.")
         print("Sistema militar iniciado.")
+        print("Sistema económico iniciado.")
         print("Handlers registrados.")
         print("Polling iniciado.")
         print("================================")
