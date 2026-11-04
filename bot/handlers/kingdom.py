@@ -3,17 +3,24 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from html import escape
 
 from bot.database.connection import get_pool
+from bot.services.world import assign_world_position
 from bot.keyboards.main_menu import (
     main_menu_keyboard,
-    create_realm_keyboard
+    create_realm_keyboard,
 )
 
 router = Router()
 
 
 class RealmCreation(StatesGroup):
+    waiting_for_name = State()
+
+
+class RealmRename(StatesGroup):
     waiting_for_name = State()
 
 
@@ -30,8 +37,67 @@ async def ensure_realm_resources(connection, realm_id):
         VALUES ($1, 1250, 850, 2400, 1600)
         ON CONFLICT (realm_id) DO NOTHING
         """,
-        realm_id
+        realm_id,
     )
+
+
+def validate_realm_name(value):
+    if not value:
+        return None, "Escribe un nombre válido para tu reino."
+
+    name = " ".join(value.split())
+
+    if len(name) < 3 or len(name) > 24:
+        return None, (
+            "El nombre debe tener entre "
+            "<b>3 y 24 caracteres</b>."
+        )
+
+    if any(ord(char) < 32 for char in name):
+        return None, "El nombre contiene caracteres no válidos."
+
+    if not any(char.isalnum() for char in name):
+        return None, "El nombre debe contener letras o números."
+
+    return name, None
+
+
+def kingdom_keyboard():
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="✏️ Cambiar nombre",
+        callback_data="kingdom:rename",
+    )
+
+    builder.button(
+        text="🔄 Actualizar",
+        callback_data="kingdom",
+    )
+
+    builder.button(
+        text="📦 Recursos",
+        callback_data="economy",
+    )
+
+    builder.button(
+        text="🏗 Edificios",
+        callback_data="buildings",
+    )
+
+    builder.button(
+        text="⚔ Ejército",
+        callback_data="army",
+    )
+
+    builder.button(
+        text="↩ Menú principal",
+        callback_data="main_menu",
+    )
+
+    builder.adjust(1, 2, 2, 1)
+
+    return builder.as_markup()
 
 
 async def show_kingdom(callback: CallbackQuery):
@@ -45,31 +111,46 @@ async def show_kingdom(callback: CallbackQuery):
                 name,
                 level,
                 population,
-                power
+                power,
+                continent,
+                region,
+                position
             FROM realms
             WHERE owner_id = $1
             """,
-            callback.from_user.id
+            callback.from_user.id,
         )
 
         if not realm:
             await callback.answer(
                 "Primero debes fundar tu reino.",
-                show_alert=True
+                show_alert=True,
             )
 
             await callback.message.edit_text(
                 "🏰 <b>Aún no posees un reino.</b>\n\n"
                 "Funda tu primer dominio para comenzar "
                 "a desarrollar tus tierras.",
-                reply_markup=create_realm_keyboard()
+                reply_markup=create_realm_keyboard(),
             )
             return
 
         await ensure_realm_resources(
             connection,
-            realm["id"]
+            realm["id"],
         )
+
+        coordinates = (
+            realm["continent"],
+            realm["region"],
+            realm["position"],
+        )
+
+        if any(value is None for value in coordinates):
+            coordinates = await assign_world_position(
+                connection,
+                realm["id"],
+            )
 
         resources = await connection.fetchrow(
             """
@@ -77,29 +158,33 @@ async def show_kingdom(callback: CallbackQuery):
             FROM resources
             WHERE realm_id = $1
             """,
-            realm["id"]
+            realm["id"],
         )
 
     await callback.answer()
 
     await callback.message.edit_text(
-        f"🏰 <b>{realm['name']}</b>\n\n"
-        f"⭐ Nivel: {realm['level']}\n"
-        f"👥 Población: {realm['population']:,}\n"
-        f"⚔ Poder: {realm['power']:,}\n\n"
+        f"🏰 <b>{escape(realm['name'])}</b>\n\n"
+        f"⭐ Nivel: <b>{realm['level']}</b>\n"
+        f"👥 Población: <b>{realm['population']:,}</b>\n"
+        f"⚔ Poder: <b>{realm['power']:,}</b>\n"
+        f"🗺 Coordenadas: "
+        f"<code>{coordinates[0]}:{coordinates[1]}:{coordinates[2]}</code>\n\n"
         "<b>Recursos disponibles</b>\n"
-        f"🪵 Madera: {resources['wood']:,}\n"
-        f"🪨 Piedra: {resources['stone']:,}\n"
-        f"🪙 Oro: {resources['gold']:,}\n"
-        f"🌾 Alimentos: {resources['food']:,}",
-        reply_markup=main_menu_keyboard()
+        f"🪵 Madera: <b>{resources['wood']:,}</b>\n"
+        f"🪨 Piedra: <b>{resources['stone']:,}</b>\n"
+        f"🪙 Oro: <b>{resources['gold']:,}</b>\n"
+        f"🌾 Alimentos: <b>{resources['food']:,}</b>\n\n"
+        "<i>Tu reino continúa creciendo. "
+        "Administra tus tierras y prepara tus ejércitos.</i>",
+        reply_markup=kingdom_keyboard(),
     )
 
 
 @router.callback_query(F.data == "create_realm")
 async def create_realm_handler(
     callback: CallbackQuery,
-    state: FSMContext
+    state: FSMContext,
 ):
     pool = await get_pool()
 
@@ -110,14 +195,14 @@ async def create_realm_handler(
             FROM realms
             WHERE owner_id = $1
             """,
-            callback.from_user.id
+            callback.from_user.id,
         )
 
     if existing:
         await state.clear()
         await callback.answer(
             "Ya tienes un reino fundado.",
-            show_alert=True
+            show_alert=True,
         )
         await show_kingdom(callback)
         return
@@ -140,28 +225,12 @@ async def create_realm_handler(
 @router.message(RealmCreation.waiting_for_name)
 async def receive_realm_name(
     message: Message,
-    state: FSMContext
+    state: FSMContext,
 ):
-    if not message.text:
-        await message.answer(
-            "Escribe un nombre válido para tu reino."
-        )
-        return
+    realm_name, error = validate_realm_name(message.text)
 
-    realm_name = " ".join(message.text.split())
-
-    if len(realm_name) < 3 or len(realm_name) > 24:
-        await message.answer(
-            "El nombre debe tener entre "
-            "<b>3 y 24 caracteres</b>.\n\n"
-            "Inténtalo de nuevo."
-        )
-        return
-
-    if any(ord(char) < 32 for char in realm_name):
-        await message.answer(
-            "El nombre contiene caracteres no válidos."
-        )
+    if error:
+        await message.answer(error)
         return
 
     pool = await get_pool()
@@ -176,7 +245,7 @@ async def receive_realm_name(
                 WHERE id = $1
                 FOR UPDATE
                 """,
-                user_id
+                user_id,
             )
 
             if not player:
@@ -193,7 +262,7 @@ async def receive_realm_name(
                 FROM realms
                 WHERE owner_id = $1
                 """,
-                user_id
+                user_id,
             )
 
             if existing:
@@ -211,14 +280,14 @@ async def receive_realm_name(
                     RETURNING id, name
                     """,
                     user_id,
-                    realm_name
+                    realm_name,
                 )
 
                 already_exists = False
 
                 await ensure_realm_resources(
                     connection,
-                    realm["id"]
+                    realm["id"],
                 )
 
                 await connection.execute(
@@ -235,7 +304,7 @@ async def receive_realm_name(
                     ON CONFLICT (realm_id, building_type)
                     DO NOTHING
                     """,
-                    realm["id"]
+                    realm["id"],
                 )
 
                 await connection.execute(
@@ -253,7 +322,12 @@ async def receive_realm_name(
                     ON CONFLICT (realm_id, province_number)
                     DO NOTHING
                     """,
-                    realm["id"]
+                    realm["id"],
+                )
+
+                coordinates = await assign_world_position(
+                    connection,
+                    realm["id"],
                 )
 
     await state.clear()
@@ -261,20 +335,107 @@ async def receive_realm_name(
     if already_exists:
         await message.answer(
             "Ya habías fundado un reino anteriormente.\n\n"
-            f"🏰 Tu dominio actual es <b>{realm['name']}</b>.",
-            reply_markup=main_menu_keyboard()
+            f"🏰 Tu dominio actual es <b>{escape(realm['name'])}</b>.",
+            reply_markup=main_menu_keyboard(),
         )
         return
 
     await message.answer(
         "👑 <b>¡Tu reino ha sido fundado!</b>\n\n"
-        f"🏰 Nombre del reino: <b>{realm['name']}</b>\n\n"
+        f"🏰 Nombre: <b>{escape(realm['name'])}</b>\n"
+        f"🗺 Coordenadas: "
+        f"<code>{coordinates[0]}:{coordinates[1]}:{coordinates[2]}</code>\n\n"
         "Tus tierras ya están listas. "
         "Comienza a construir tu legado.",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(),
     )
 
 
 @router.callback_query(F.data == "kingdom")
 async def kingdom_handler(callback: CallbackQuery):
     await show_kingdom(callback)
+
+
+@router.callback_query(F.data == "kingdom:rename")
+async def rename_realm_handler(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        realm = await connection.fetchrow(
+            """
+            SELECT id, name
+            FROM realms
+            WHERE owner_id = $1
+            """,
+            callback.from_user.id,
+        )
+
+    if not realm:
+        await callback.answer(
+            "No tienes un reino que puedas renombrar.",
+            show_alert=True,
+        )
+        return
+
+    await state.set_state(
+        RealmRename.waiting_for_name
+    )
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        "✏️ <b>Cambiar nombre del reino</b>\n\n"
+        f"Nombre actual: <b>{escape(realm['name'])}</b>\n\n"
+        "Escribe el nuevo nombre.\n"
+        "Debe tener entre <b>3 y 24 caracteres</b>.\n\n"
+        "El cambio no modificará tus edificios, "
+        "recursos, ejército ni coordenadas."
+    )
+
+
+@router.message(RealmRename.waiting_for_name)
+async def receive_new_realm_name(
+    message: Message,
+    state: FSMContext,
+):
+    realm_name, error = validate_realm_name(message.text)
+
+    if error:
+        await message.answer(error)
+        return
+
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        realm = await connection.fetchrow(
+            """
+            UPDATE realms
+            SET name = $1
+            WHERE owner_id = $2
+            RETURNING id, name, continent, region, position
+            """,
+            realm_name,
+            message.from_user.id,
+        )
+
+    await state.clear()
+
+    if not realm:
+        await message.answer(
+            "No se encontró tu reino. "
+            "No se pudo cambiar el nombre."
+        )
+        return
+
+    await message.answer(
+        "👑 <b>Nombre del reino actualizado.</b>\n\n"
+        f"🏰 Nuevo nombre: <b>{escape(realm['name'])}</b>\n"
+        f"🗺 Coordenadas: "
+        f"<code>{realm['continent']}:{realm['region']}:{realm['position']}</code>\n\n"
+        "Tu reino conserva todos sus edificios, "
+        "recursos, tropas y territorios.",
+        reply_markup=kingdom_keyboard(),
+    )
