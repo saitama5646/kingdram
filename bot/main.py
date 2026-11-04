@@ -31,7 +31,6 @@ async def main():
     )
 
     dp = Dispatcher()
-
     workers = []
 
     try:
@@ -51,16 +50,20 @@ async def main():
             asyncio.create_task(construction_worker())
         )
 
+        workers.append(
+            asyncio.create_task(military_worker())
+        )
+
         print("================================")
         print("KINGDRAM")
         print("Base de datos Neon conectada.")
-        print("Sistema de construcción iniciado.")
         print("Producción automática iniciada.")
+        print("Sistema de construcción iniciado.")
+        print("Sistema militar iniciado.")
         print("Handlers registrados.")
         print("Polling iniciado.")
         print("================================")
 
-        asyncio.create_task(military_worker())
         await dp.start_polling(bot)
 
     finally:
