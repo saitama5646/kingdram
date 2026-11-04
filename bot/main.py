@@ -5,11 +5,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from bot.config import BOT_TOKEN
-
-from bot.database.connection import (
-    connect_database,
-    close_database,
-)
+from bot.database.connection import connect_database, close_database
+from bot.web import RuntimeState, start_health_server
 
 from bot.handlers.start import router as start_router
 from bot.handlers.kingdom import router as kingdom_router
@@ -31,15 +28,24 @@ from bot.workers.research import research_worker
 async def main():
     bot = Bot(
         token=BOT_TOKEN,
-        default=DefaultBotProperties(
-            parse_mode=ParseMode.HTML
-        )
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
     dp = Dispatcher()
     workers = []
+    http_server = None
+    http_task = None
+    polling_task = None
+    state = RuntimeState()
 
     try:
+        # Abrimos el puerto cuanto antes para que Render detecte el servicio.
+        http_server = await start_health_server(state)
+        http_task = asyncio.create_task(
+            http_server.serve_forever(),
+            name="kingdram-http",
+        )
+
         await connect_database()
 
         dp.include_router(start_router)
@@ -53,33 +59,29 @@ async def main():
         dp.include_router(battle_router)
         dp.include_router(menu_router)
 
-        workers.append(
+        workers.extend([
             asyncio.create_task(
                 production_worker(),
                 name="kingdram-production",
-            )
-        )
-
-        workers.append(
+            ),
             asyncio.create_task(
                 construction_worker(bot),
                 name="kingdram-construction",
-            )
-        )
-
-        workers.append(
+            ),
             asyncio.create_task(
                 military_worker(),
                 name="kingdram-military",
-            )
-        )
-
-        workers.append(
+            ),
             asyncio.create_task(
                 research_worker(),
                 name="kingdram-research",
-            )
-        )
+            ),
+        ])
+
+        # Asegura el modo polling si el bot tuvo un webhook configurado antes.
+        await bot.delete_webhook(drop_pending_updates=False)
+
+        state.ready = True
 
         print("================================")
         print("KINGDRAM")
@@ -93,23 +95,59 @@ async def main():
         print("Sistema de vasallaje preparado.")
         print("Sistema territorial registrado.")
         print("Handlers registrados.")
-        print("Polling iniciado.")
+        print("Servidor HTTP listo.")
+        print("Polling de Telegram iniciándose.")
         print("================================")
 
-        await dp.start_polling(bot)
+        polling_task = asyncio.create_task(
+            dp.start_polling(
+                bot,
+                allowed_updates=dp.resolve_used_update_types(),
+            ),
+            name="kingdram-telegram-polling",
+        )
+
+        done, pending = await asyncio.wait(
+            {polling_task, http_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
+
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        for task in done:
+            task.result()
 
     finally:
+        state.ready = False
+
+        for task in (polling_task, http_task):
+            if task is not None and not task.done():
+                task.cancel()
+
+        active_tasks = [
+            task for task in (polling_task, http_task)
+            if task is not None
+        ]
+        if active_tasks:
+            await asyncio.gather(*active_tasks, return_exceptions=True)
+
         for worker in workers:
             worker.cancel()
 
         if workers:
-            await asyncio.gather(
-                *workers,
-                return_exceptions=True,
-            )
+            await asyncio.gather(*workers, return_exceptions=True)
+
+        if http_server is not None:
+            http_server.close()
+            await http_server.wait_closed()
 
         await close_database()
         await bot.session.close()
+        print("Kingdram detenido correctamente.")
 
 
 if __name__ == "__main__":
