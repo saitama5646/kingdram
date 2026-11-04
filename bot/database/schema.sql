@@ -77,13 +77,21 @@ DO $$
 DECLARE
     current_season BIGINT;
 BEGIN
-    IF to_regclass('public.seasons') IS NOT NULL THEN
-        EXECUTE 'SELECT MAX(id) FROM seasons'
+    IF to_regclass('public.seasons') IS NOT NULL
+       AND to_regclass('public.realms') IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'realms'
+             AND column_name = 'season_id'
+       ) THEN
+        EXECUTE 'SELECT MAX(id) FROM public.seasons'
         INTO current_season;
 
         IF current_season IS NOT NULL THEN
             EXECUTE format(
-                'ALTER TABLE realms ALTER COLUMN season_id SET DEFAULT %s',
+                'ALTER TABLE public.realms ALTER COLUMN season_id SET DEFAULT %s',
                 current_season
             );
         END IF;
@@ -132,13 +140,23 @@ ON realms(power DESC);
 
 CREATE OR REPLACE FUNCTION kingdram_sync_realm_owner()
 RETURNS TRIGGER AS $$
+DECLARE
+    legacy_telegram_id BIGINT;
 BEGIN
+    legacy_telegram_id := NULLIF(
+        to_jsonb(NEW)->>'telegram_id', ''
+    )::BIGINT;
+
     IF NEW.owner_id IS NULL THEN
-        NEW.owner_id := NEW.telegram_id;
+        NEW.owner_id := legacy_telegram_id;
     END IF;
 
-    IF NEW.telegram_id IS NULL THEN
-        NEW.telegram_id := NEW.owner_id;
+    IF to_jsonb(NEW) ? 'telegram_id'
+       AND legacy_telegram_id IS NULL THEN
+        NEW := jsonb_populate_record(
+            NEW,
+            jsonb_build_object('telegram_id', NEW.owner_id)
+        );
     END IF;
 
     RETURN NEW;

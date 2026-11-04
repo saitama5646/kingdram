@@ -91,7 +91,7 @@ async def finish_training(connection, realm_id):
 
 
 async def get_military_data(user_id):
-    pool = get_pool()
+    pool = await get_pool()
 
     async with pool.acquire() as connection:
         async with connection.transaction():
@@ -155,7 +155,7 @@ async def start_training(user_id, unit_type, quantity):
         return False, "Cantidad no válida."
 
     unit = UNITS[unit_type]
-    pool = get_pool()
+    pool = await get_pool()
 
     async with pool.acquire() as connection:
         async with connection.transaction():

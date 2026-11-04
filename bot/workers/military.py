@@ -10,7 +10,7 @@ async def military_worker():
 
     while True:
         try:
-            pool = get_pool()
+            pool = await get_pool()
 
             async with pool.acquire() as connection:
                 realm_ids = await connection.fetch(
