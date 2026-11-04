@@ -1,3 +1,5 @@
+
+from datetime import datetime, timezone
 from html import escape
 
 from aiogram import Router, F
@@ -5,10 +7,16 @@ from aiogram.types import CallbackQuery
 
 from bot.services.military import (
     UNITS,
+    RESOURCE_LABELS,
+    format_costs,
     get_military_data,
     start_training,
 )
-from bot.keyboards.army import army_keyboard, unit_keyboard
+
+from bot.keyboards.army import (
+    army_keyboard,
+    unit_keyboard,
+)
 
 
 router = Router()
@@ -16,34 +24,40 @@ router = Router()
 
 def format_time(value):
     seconds = max(0, int(value.total_seconds()))
+
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
 
     if hours:
         return f"{hours}h {minutes}m"
+
     if minutes:
         return f"{minutes}m {seconds}s"
+
     return f"{seconds}s"
 
 
-async def render_army(callback):
-    data = await get_military_data(callback.from_user.id)
+async def render_army(callback: CallbackQuery):
+    data = await get_military_data(
+        callback.from_user.id
+    )
 
     if not data:
         await callback.message.edit_text(
-            "No tienes un reino todavía.",
+            "🏰 <b>No tienes un reino todavía.</b>\n\n"
+            "Funda tu reino antes de reclutar soldados."
         )
         return
 
     realm = data["realm"]
 
     lines = [
-        "<b>EJÉRCITO DEL REINO</b>",
+        "⚔️ <b>CUARTEL DEL REINO</b>",
         "",
-        f"Reino: <b>{escape(realm['name'])}</b>",
-        f"Cuartel: nivel {data['barracks']}",
+        f"🏰 Reino: <b>{escape(realm['name'])}</b>",
+        f"🏗 Cuartel: nivel <b>{data['barracks']}</b>",
         "",
-        "<b>TROPAS DISPONIBLES</b>",
+        "🪖 <b>TROPAS DISPONIBLES</b>",
     ]
 
     total = 0
@@ -57,44 +71,60 @@ async def render_army(callback):
             continue
 
         quantity = troop["quantity"]
+
         total += quantity
         total_attack += quantity * unit["attack"]
         total_defense += quantity * unit["defense"]
 
         lines.append(
-            f"• {unit['name']}: <b>{quantity:,}</b>"
+            f"{unit['emoji']} {unit['name']}: "
+            f"<b>{quantity:,}</b>"
         )
 
     if total == 0:
-        lines.append("Todavía no tienes tropas.")
+        lines.append(
+            "<i>Todavía no tienes soldados reclutados.</i>"
+        )
 
     lines.extend([
         "",
-        "<b>RESUMEN MILITAR</b>",
-        f"Soldados: {total:,}",
-        f"Fuerza de ataque: {total_attack:,}",
-        f"Defensa: {total_defense:,}",
+        "📊 <b>RESUMEN MILITAR</b>",
+        f"🪖 Soldados: <b>{total:,}</b>",
+        f"⚔️ Fuerza de ataque: <b>{total_attack:,}</b>",
+        f"🛡️ Defensa: <b>{total_defense:,}</b>",
         "",
-        "<b>ENTRENAMIENTO</b>",
+        "⏳ <b>ENTRENAMIENTOS</b>",
     ])
 
     if data["queue"]:
+        now = datetime.now(timezone.utc)
+
         for item in data["queue"]:
             unit = UNITS.get(item["unit_type"])
-            name = unit["name"] if unit else item["unit_type"]
 
-            remaining = item["finishes_at"] - __import__(
-                "datetime"
-            ).datetime.now(
-                __import__("datetime").timezone.utc
-            )
+            if unit:
+                name = (
+                    f"{unit['emoji']} {unit['name']}"
+                )
+            else:
+                name = escape(item["unit_type"])
+
+            remaining = item["finishes_at"] - now
 
             lines.append(
                 f"• {name} x{item['quantity']}: "
-                f"{format_time(remaining)}"
+                f"<b>{format_time(remaining)}</b>"
             )
     else:
-        lines.append("No hay entrenamientos pendientes.")
+        lines.append(
+            "<i>No hay entrenamientos pendientes.</i>"
+        )
+
+    lines.extend([
+        "",
+        "Selecciona una unidad para consultar "
+        "sus características y reclutarla.",
+    ])
 
     await callback.message.edit_text(
         "\n".join(lines),
@@ -111,37 +141,57 @@ async def army_handler(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("army:unit:"))
 async def unit_details(callback: CallbackQuery):
-    unit_type = callback.data.split(":")[2]
+    parts = callback.data.split(":")
+
+    if len(parts) != 3:
+        await callback.answer(
+            "Solicitud incorrecta.",
+            show_alert=True,
+        )
+        return
+
+    unit_type = parts[2]
     unit = UNITS.get(unit_type)
 
     if not unit:
-        await callback.answer("Unidad no encontrada.", show_alert=True)
+        await callback.answer(
+            "Unidad no encontrada.",
+            show_alert=True,
+        )
         return
 
-    data = await get_military_data(callback.from_user.id)
-
-    if not data:
-        await callback.answer("Primero funda un reino.", show_alert=True)
-        return
-
-    costs = (
-        f"Madera: {unit['wood']:,}\n"
-        f"Piedra: {unit['stone']:,}\n"
-        f"Oro: {unit['gold']:,}\n"
-        f"Alimentos: {unit['food']:,}"
+    data = await get_military_data(
+        callback.from_user.id
     )
 
+    if not data:
+        await callback.answer(
+            "Primero funda un reino.",
+            show_alert=True,
+        )
+        return
+
+    costs = {
+        "wood": unit["wood"],
+        "stone": unit["stone"],
+        "gold": unit["gold"],
+        "food": unit["food"],
+    }
+
     text = (
-        f"<b>{unit['name'].upper()}</b>\n\n"
+        f"{unit['emoji']} <b>{unit['name'].upper()}</b>\n\n"
         f"{unit['description']}\n\n"
-        f"Ataque: {unit['attack']}\n"
-        f"Defensa: {unit['defense']}\n"
-        f"Cuartel requerido: nivel {unit['barracks']}\n\n"
-        f"<b>Coste por unidad</b>\n{costs}\n\n"
-        f"Tiempo base: {unit['seconds']} segundos."
+        f"⚔️ Ataque: <b>{unit['attack']}</b>\n"
+        f"🛡️ Defensa: <b>{unit['defense']}</b>\n"
+        f"🏗 Cuartel requerido: "
+        f"<b>nivel {unit['barracks']}</b>\n\n"
+        "<b>Coste por unidad</b>\n"
+        f"{format_costs(costs)}\n\n"
+        f"⏱ Tiempo base: <b>{unit['seconds']} segundos</b>"
     )
 
     await callback.answer()
+
     await callback.message.edit_text(
         text,
         reply_markup=unit_keyboard(unit_type),
@@ -154,7 +204,10 @@ async def train_units(callback: CallbackQuery):
     parts = callback.data.split(":")
 
     if len(parts) != 4:
-        await callback.answer("Solicitud incorrecta.", show_alert=True)
+        await callback.answer(
+            "Solicitud incorrecta.",
+            show_alert=True,
+        )
         return
 
     unit_type = parts[2]
@@ -162,19 +215,32 @@ async def train_units(callback: CallbackQuery):
     try:
         quantity = int(parts[3])
     except ValueError:
-        await callback.answer("Cantidad incorrecta.", show_alert=True)
+        await callback.answer(
+            "Cantidad incorrecta.",
+            show_alert=True,
+        )
         return
 
-    success, message = await start_training(
+    success, result_message = await start_training(
         callback.from_user.id,
         unit_type,
         quantity,
     )
 
+    if not success:
+        await callback.answer(
+            "No se pudo iniciar el entrenamiento.",
+            show_alert=True,
+        )
+
+        await callback.message.answer(
+            result_message,
+            parse_mode="HTML",
+        )
+        return
+
     await callback.answer(
-        message,
-        show_alert=not success,
+        "Entrenamiento iniciado."
     )
 
-    if success:
-        await render_army(callback)
+    await render_army(callback)

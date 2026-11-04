@@ -1,3 +1,4 @@
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from bot.services.military import UNITS, QUANTITIES
@@ -8,7 +9,7 @@ def army_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"Entrenar {unit['name']}",
+                    text=f"{unit['emoji']} {unit['name']}",
                     callback_data=f"army:unit:{code}",
                 )
             ]
@@ -16,11 +17,11 @@ def army_keyboard():
         ] + [
             [
                 InlineKeyboardButton(
-                    text="Actualizar",
+                    text="🔄 Actualizar",
                     callback_data="army",
                 ),
                 InlineKeyboardButton(
-                    text="Menú principal",
+                    text="↩ Menú principal",
                     callback_data="main_menu",
                 ),
             ]
@@ -29,21 +30,21 @@ def army_keyboard():
 
 
 def unit_keyboard(unit_type):
-    unit = UNITS[unit_type]
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"Entrenar {quantity}",
-                    callback_data=f"army:train:{unit_type}:{quantity}",
+                    text=f"⚔️ Entrenar {quantity}",
+                    callback_data=(
+                        f"army:train:{unit_type}:{quantity}"
+                    ),
                 )
             ]
             for quantity in QUANTITIES
         ] + [
             [
                 InlineKeyboardButton(
-                    text="Volver al ejército",
+                    text="↩ Volver al ejército",
                     callback_data="army",
                 )
             ]

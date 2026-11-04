@@ -1,10 +1,11 @@
 
+from html import escape
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from html import escape
 
 from bot.database.connection import get_pool
 from bot.services.world import assign_world_position
@@ -12,6 +13,7 @@ from bot.keyboards.main_menu import (
     main_menu_keyboard,
     create_realm_keyboard,
 )
+
 
 router = Router()
 
@@ -22,23 +24,6 @@ class RealmCreation(StatesGroup):
 
 class RealmRename(StatesGroup):
     waiting_for_name = State()
-
-
-async def ensure_realm_resources(connection, realm_id):
-    await connection.execute(
-        """
-        INSERT INTO resources (
-            realm_id,
-            wood,
-            stone,
-            gold,
-            food
-        )
-        VALUES ($1, 1250, 850, 2400, 1600)
-        ON CONFLICT (realm_id) DO NOTHING
-        """,
-        realm_id,
-    )
 
 
 def validate_realm_name(value):
@@ -62,6 +47,23 @@ def validate_realm_name(value):
     return name, None
 
 
+async def ensure_realm_resources(connection, realm_id):
+    await connection.execute(
+        """
+        INSERT INTO resources (
+            realm_id,
+            wood,
+            stone,
+            gold,
+            food
+        )
+        VALUES ($1, 1250, 850, 2400, 1600)
+        ON CONFLICT (realm_id) DO NOTHING
+        """,
+        realm_id,
+    )
+
+
 def kingdom_keyboard():
     builder = InlineKeyboardBuilder()
 
@@ -69,27 +71,22 @@ def kingdom_keyboard():
         text="✏️ Cambiar nombre",
         callback_data="kingdom:rename",
     )
-
     builder.button(
         text="🔄 Actualizar",
         callback_data="kingdom",
     )
-
     builder.button(
         text="📦 Recursos",
         callback_data="economy",
     )
-
     builder.button(
         text="🏗 Edificios",
         callback_data="buildings",
     )
-
     builder.button(
         text="⚔ Ejército",
         callback_data="army",
     )
-
     builder.button(
         text="↩ Menú principal",
         callback_data="main_menu",
@@ -174,9 +171,7 @@ async def show_kingdom(callback: CallbackQuery):
         f"🪵 Madera: <b>{resources['wood']:,}</b>\n"
         f"🪨 Piedra: <b>{resources['stone']:,}</b>\n"
         f"🪙 Oro: <b>{resources['gold']:,}</b>\n"
-        f"🌾 Alimentos: <b>{resources['food']:,}</b>\n\n"
-        "<i>Tu reino continúa creciendo. "
-        "Administra tus tierras y prepara tus ejércitos.</i>",
+        f"🌾 Alimentos: <b>{resources['food']:,}</b>",
         reply_markup=kingdom_keyboard(),
     )
 
@@ -268,6 +263,7 @@ async def receive_realm_name(
             if existing:
                 realm = existing
                 already_exists = True
+                coordinates = None
 
             else:
                 realm = await connection.fetchrow(

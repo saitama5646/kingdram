@@ -1,10 +1,13 @@
+
 from math import ceil
+
 from bot.database.connection import get_pool
 
 
 UNITS = {
     "spearman": {
         "name": "Lancero",
+        "emoji": "🗡️",
         "description": "Infantería defensiva básica.",
         "attack": 8,
         "defense": 12,
@@ -17,6 +20,7 @@ UNITS = {
     },
     "archer": {
         "name": "Arquero",
+        "emoji": "🏹",
         "description": "Unidad de ataque a distancia.",
         "attack": 15,
         "defense": 5,
@@ -29,6 +33,7 @@ UNITS = {
     },
     "cavalry": {
         "name": "Caballería",
+        "emoji": "🐎",
         "description": "Unidad rápida y poderosa.",
         "attack": 28,
         "defense": 18,
@@ -41,6 +46,7 @@ UNITS = {
     },
     "royal_guard": {
         "name": "Guardia real",
+        "emoji": "🛡️",
         "description": "Élite militar del reino.",
         "attack": 35,
         "defense": 40,
@@ -55,6 +61,21 @@ UNITS = {
 
 
 QUANTITIES = (5, 10, 25)
+
+
+RESOURCE_LABELS = {
+    "wood": "🪵 Madera",
+    "stone": "🪨 Piedra",
+    "gold": "🪙 Oro",
+    "food": "🌾 Alimentos",
+}
+
+
+def format_costs(costs):
+    return "\n".join(
+        f"{RESOURCE_LABELS[resource]}: <b>{amount:,}</b>"
+        for resource, amount in costs.items()
+    )
 
 
 async def finish_training(connection, realm_id):
@@ -73,7 +94,11 @@ async def finish_training(connection, realm_id):
     for item in completed:
         await connection.execute(
             """
-            INSERT INTO army (realm_id, unit_type, quantity)
+            INSERT INTO army (
+                realm_id,
+                unit_type,
+                quantity
+            )
             VALUES ($1, $2, $3)
             ON CONFLICT (realm_id, unit_type)
             DO UPDATE SET quantity =
@@ -107,7 +132,10 @@ async def get_military_data(user_id):
             if not realm:
                 return None
 
-            await finish_training(connection, realm["id"])
+            await finish_training(
+                connection,
+                realm["id"],
+            )
 
             barracks = await connection.fetchval(
                 """
@@ -202,7 +230,9 @@ async def start_training(user_id, unit_type, quantity):
             )
 
             if not resources:
-                return False, "No se encontraron los recursos del reino."
+                return False, (
+                    "No se encontraron los recursos del reino."
+                )
 
             costs = {
                 "wood": unit["wood"] * quantity,
@@ -211,12 +241,23 @@ async def start_training(user_id, unit_type, quantity):
                 "food": unit["food"] * quantity,
             }
 
+            missing = []
+
             for resource, amount in costs.items():
                 if resources[resource] < amount:
-                    return False, (
-                        f"Recursos insuficientes: necesitas "
-                        f"{amount:,} de {resource}."
+                    missing.append(
+                        f"{RESOURCE_LABELS[resource]}: "
+                        f"faltan "
+                        f"{amount - resources[resource]:,}"
                     )
+
+            if missing:
+                return False, (
+                    "No tienes suficientes recursos.\n\n"
+                    + "\n".join(missing)
+                    + "\n\n<b>Coste total requerido:</b>\n"
+                    + format_costs(costs)
+                )
 
             await connection.execute(
                 """
@@ -234,16 +275,6 @@ async def start_training(user_id, unit_type, quantity):
                 realm_id,
             )
 
-            active_queue = await connection.fetchval(
-                """
-                SELECT COUNT(*)
-                FROM training_queue
-                WHERE realm_id = $1
-                """,
-                realm_id,
-            )
-
-            # Cada lote se coloca después del último lote pendiente.
             last_finish = await connection.fetchval(
                 """
                 SELECT MAX(finishes_at)
@@ -255,7 +286,10 @@ async def start_training(user_id, unit_type, quantity):
 
             duration = ceil(
                 unit["seconds"] * quantity
-                / (1 + max(0, (barracks or 1) - 1) * 0.10)
+                / (
+                    1
+                    + max(0, (barracks or 1) - 1) * 0.10
+                )
             )
 
             await connection.execute(
@@ -284,7 +318,8 @@ async def start_training(user_id, unit_type, quantity):
             )
 
             return True, (
-                f"Entrenamiento iniciado: {quantity} "
-                f"{unit['name']}(s).\n"
+                f"{unit['emoji']} <b>Entrenamiento iniciado</b>\n\n"
+                f"Unidad: {unit['name']}\n"
+                f"Cantidad: {quantity}\n"
                 f"Duración aproximada: {duration} segundos."
             )

@@ -1,3 +1,4 @@
+
 import asyncpg
 
 from bot.config import DATABASE_URL, BASE_DIR
@@ -23,6 +24,7 @@ async def connect_database():
         BASE_DIR / "bot" / "database" / "schema.sql",
         BASE_DIR / "bot" / "database" / "systems.sql",
         BASE_DIR / "bot" / "database" / "battle.sql",
+        BASE_DIR / "bot" / "database" / "world.sql",
     ]
 
     try:
