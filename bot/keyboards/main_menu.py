@@ -6,7 +6,7 @@ KeyboardButton,
 )
 
 def persistent_menu_keyboard():
-"""Teclado inferior permanente reducido a cuatro accesos."""
+"""Teclado inferior permanente con cuatro accesos directos."""
 return ReplyKeyboardMarkup(
 keyboard=[
 [
@@ -24,30 +24,54 @@ input_field_placeholder="¿Qué deseas administrar?",
 )
 
 def main_menu_keyboard():
-"""Teclado emergente reducido a cuatro opciones."""
+"""Teclado inline completo del menú principal."""
 return InlineKeyboardMarkup(
 inline_keyboard=[
 [
 InlineKeyboardButton(
-text="⌂ Menú principal",
-callback_data="main_menu",
-)
-],
-[
+text="🏰 Reino",
+callback_data="kingdom",
+),
 InlineKeyboardButton(
 text="⚔ Ejército",
 callback_data="army",
 ),
+],
+[
 InlineKeyboardButton(
 text="🏗 Edificios",
 callback_data="buildings",
 ),
-],
-[
 InlineKeyboardButton(
 text="🔬 Investigaciones",
 callback_data="research",
-)
+),
+],
+[
+InlineKeyboardButton(
+text="📦 Recursos",
+callback_data="economy",
+),
+InlineKeyboardButton(
+text="🗺 Territorios",
+callback_data="territory",
+),
+],
+[
+InlineKeyboardButton(
+text="🛡 Guerra",
+callback_data="battle",
+),
+InlineKeyboardButton(
+text="🏆 Clasificación",
+callback_data="ranking",
+),
+],
+[
+InlineKeyboardButton(
+text="👑 Diplomacia",
+callback_data="diplomacy",
+),
 ],
 ]
 )
