@@ -17,11 +17,14 @@ from bot.handlers.buildings import router as buildings_router
 from bot.handlers.army import router as army_router
 from bot.handlers.economy import router as economy_router
 from bot.handlers.territory import router as territory_router
+from bot.handlers.ranking import router as ranking_router
+from bot.handlers.research import router as research_router
 from bot.handlers.menu import router as menu_router
 
 from bot.workers.production import production_worker
 from bot.workers.construction import construction_worker
 from bot.workers.military import military_worker
+from bot.workers.research import research_worker
 
 
 async def main():
@@ -44,6 +47,8 @@ async def main():
         dp.include_router(army_router)
         dp.include_router(economy_router)
         dp.include_router(territory_router)
+        dp.include_router(ranking_router)
+        dp.include_router(research_router)
         dp.include_router(menu_router)
 
         workers.append(
@@ -58,13 +63,20 @@ async def main():
             asyncio.create_task(military_worker())
         )
 
+        workers.append(
+            asyncio.create_task(research_worker())
+        )
+
         print("================================")
         print("KINGDRAM")
         print("Base de datos Neon conectada.")
         print("Producción automática iniciada.")
         print("Sistema de construcción iniciado.")
         print("Sistema militar iniciado.")
+        print("Sistema de investigación iniciado.")
         print("Sistema económico iniciado.")
+        print("Sistema de vasallaje económico preparado.")
+        print("Sistema de puntuación y clasificación iniciado.")
         print("Sistema territorial iniciado.")
         print("Handlers registrados.")
         print("Polling iniciado.")

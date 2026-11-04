@@ -21,8 +21,8 @@ def main_menu_keyboard():
                     callback_data="buildings"
                 ),
                 InlineKeyboardButton(
-                    text="🗺 Territorios",
-                    callback_data="territory"
+                    text="🔬 Investigación",
+                    callback_data="research"
                 )
             ],
             [
@@ -31,11 +31,15 @@ def main_menu_keyboard():
                     callback_data="army"
                 ),
                 InlineKeyboardButton(
-                    text="👑 Diplomacia",
-                    callback_data="diplomacy"
+                    text="🗺 Territorios",
+                    callback_data="territory"
                 )
             ],
             [
+                InlineKeyboardButton(
+                    text="👑 Diplomacia",
+                    callback_data="diplomacy"
+                ),
                 InlineKeyboardButton(
                     text="🏆 Clasificación",
                     callback_data="ranking"

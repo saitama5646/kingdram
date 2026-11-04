@@ -15,17 +15,35 @@ async def connect_database():
     pool = await asyncpg.create_pool(
         dsn=DATABASE_URL,
         min_size=1,
-        max_size=5,
+        max_size=10,
         ssl="require"
     )
 
-    schema_path = BASE_DIR / "bot" / "database" / "schema.sql"
+    schema_files = [
+        BASE_DIR / "bot" / "database" / "schema.sql",
+        BASE_DIR / "bot" / "database" / "systems.sql",
+    ]
 
-    async with pool.acquire() as connection:
-        schema = schema_path.read_text(encoding="utf-8")
-        await connection.execute(schema)
+    try:
+        async with pool.acquire() as connection:
+            for schema_path in schema_files:
+                if not schema_path.exists():
+                    raise FileNotFoundError(
+                        f"No se encontró el esquema: {schema_path}"
+                    )
 
-    print("Base de datos Kingdram inicializada correctamente.")
+                schema = schema_path.read_text(encoding="utf-8")
+
+                async with connection.transaction():
+                    await connection.execute(schema)
+
+        print("Base de datos Kingdram inicializada correctamente.")
+        print("Sistemas económicos, diplomáticos y tecnológicos preparados.")
+
+    except Exception:
+        await pool.close()
+        pool = None
+        raise
 
     return pool
 
@@ -43,5 +61,4 @@ async def close_database():
     if pool is not None:
         await pool.close()
         pool = None
-
         print("Conexión con Neon cerrada.")

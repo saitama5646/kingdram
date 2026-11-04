@@ -1,5 +1,7 @@
 
+import math
 from datetime import datetime, timezone
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 
@@ -35,7 +37,9 @@ def format_cost(cost):
 def format_remaining(value):
     seconds = max(
         0,
-        int((value - datetime.now(timezone.utc)).total_seconds())
+        math.ceil(
+            (value - datetime.now(timezone.utc)).total_seconds()
+        )
     )
 
     hours, remainder = divmod(seconds, 3600)
@@ -55,13 +59,19 @@ async def render_buildings(callback):
 
     async with pool.acquire() as connection:
         realm = await connection.fetchrow(
-            "SELECT id FROM realms WHERE owner_id = $1",
+            """
+            SELECT id, name
+            FROM realms
+            WHERE owner_id = $1
+            """,
             callback.from_user.id
         )
 
         if not realm:
             await callback.message.edit_text(
-                "Primero debes fundar tu reino."
+                "🏰 <b>Aún no tienes un reino.</b>\n\n"
+                "Funda tu dominio para comenzar "
+                "a construir."
             )
             return
 
@@ -79,7 +89,7 @@ async def render_buildings(callback):
             SELECT building_type, target_level, finishes_at
             FROM construction_queue
             WHERE realm_id = $1
-            ORDER BY started_at
+            ORDER BY finishes_at
             LIMIT 1
             """,
             realm["id"]
@@ -91,49 +101,34 @@ async def render_buildings(callback):
     }
 
     lines = [
-        "<b>INFRAESTRUCTURA DEL REINO</b>",
+        "🏗 <b>INFRAESTRUCTURA DEL REINO</b>",
         "",
-        "Administra tus edificios y desarrolla "
-        "la economía de tus dominios.",
-        ""
+        f"🏰 Dominio: <b>{realm['name']}</b>",
+        "",
+        "Selecciona un edificio para consultar "
+        "sus características, construirlo o mejorarlo."
     ]
 
-    for building_type, info in BUILDINGS.items():
-        level = levels.get(building_type, 0)
-
-        lines.append(
-            f"{info['icon']} <b>{info['name']}</b>"
-        )
-
-        if level:
-            lines.append(f"Nivel actual: {level}")
-        else:
-            lines.append("Todavía no construido.")
-
-        if pending and pending["building_type"] == building_type:
-            lines.append(
-                f"Construyendo nivel {pending['target_level']} "
-                f"({format_remaining(pending['finishes_at'])})"
-            )
-
-        lines.append("")
-
     if pending:
-        active_info = BUILDINGS.get(
+        info = BUILDINGS.get(
             pending["building_type"],
             {}
         )
 
         lines.extend([
-            "<b>COLA DE CONSTRUCCIÓN</b>",
-            f"Edificio: {active_info.get('name', pending['building_type'])}",
+            "",
+            "⏳ <b>CONSTRUCCIÓN EN CURSO</b>",
+            f"{info.get('icon', '🏗')} "
+            f"{info.get('name', pending['building_type'])}",
             f"Nivel objetivo: {pending['target_level']}",
-            f"Tiempo restante: {format_remaining(pending['finishes_at'])}",
+            f"Tiempo restante: "
+            f"{format_remaining(pending['finishes_at'])}"
         ])
     else:
-        lines.append(
-            "<i>No tienes construcciones pendientes.</i>"
-        )
+        lines.extend([
+            "",
+            "✅ No tienes construcciones pendientes."
+        ])
 
     await callback.message.edit_text(
         "\n".join(lines),
@@ -197,7 +192,7 @@ async def building_detail_handler(callback: CallbackQuery):
             SELECT building_type, target_level, finishes_at
             FROM construction_queue
             WHERE realm_id = $1
-            ORDER BY started_at
+            ORDER BY finishes_at
             LIMIT 1
             """,
             realm["id"]
@@ -229,7 +224,8 @@ async def building_detail_handler(callback: CallbackQuery):
         f"<b>Coste de {action.lower()}</b>",
         format_cost(cost),
         "",
-        f"Tiempo: {duration // 60} min {duration % 60} s"
+        f"Tiempo: {duration // 60} min "
+        f"{duration % 60} s"
     ]
 
     if pending:
@@ -240,10 +236,11 @@ async def building_detail_handler(callback: CallbackQuery):
 
         lines.extend([
             "",
-            "<b>COLA DE CONSTRUCCIÓN</b>",
+            "⏳ <b>COLA DE CONSTRUCCIÓN</b>",
             f"Edificio: {pending_info.get('name', pending['building_type'])}",
             f"Nivel objetivo: {pending['target_level']}",
-            f"Tiempo restante: {format_remaining(pending['finishes_at'])}"
+            f"Tiempo restante: "
+            f"{format_remaining(pending['finishes_at'])}"
         ])
 
     await callback.answer()
@@ -271,8 +268,6 @@ async def upgrade_building_handler(callback: CallbackQuery):
 
     pool = await get_pool()
     error_message = None
-    target_level = None
-    duration = None
 
     async with pool.acquire() as connection:
         async with connection.transaction():
@@ -287,7 +282,8 @@ async def upgrade_building_handler(callback: CallbackQuery):
             )
 
             if not realm:
-                error_message = "Primero debes fundar un reino."
+                error_message = "Primero debes fundar tu reino."
+
             else:
                 realm_id = realm["id"]
 
@@ -306,12 +302,14 @@ async def upgrade_building_handler(callback: CallbackQuery):
                     pending_name = BUILDINGS.get(
                         pending["building_type"],
                         {}
-                    ).get("name", pending["building_type"])
+                    ).get(
+                        "name",
+                        pending["building_type"]
+                    )
 
                     error_message = (
                         f"Ya tienes una construcción activa: "
-                        f"{pending_name}. "
-                        "Espera a que termine antes de iniciar otra."
+                        f"{pending_name}. Espera a que termine."
                     )
 
                 else:
@@ -417,5 +415,4 @@ async def upgrade_building_handler(callback: CallbackQuery):
         return
 
     await callback.answer("Construcción iniciada.")
-
     await render_buildings(callback)
