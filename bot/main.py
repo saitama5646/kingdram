@@ -1,4 +1,3 @@
-
 import asyncio
 
 from aiogram import Bot, Dispatcher
@@ -6,9 +5,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from bot.config import BOT_TOKEN
+
 from bot.database.connection import (
     connect_database,
-    close_database
+    close_database,
 )
 
 from bot.handlers.start import router as start_router
@@ -20,6 +20,7 @@ from bot.handlers.territory import router as territory_router
 from bot.handlers.ranking import router as ranking_router
 from bot.handlers.research import router as research_router
 from bot.handlers.menu import router as menu_router
+from bot.handlers.battle import router as battle_router
 
 from bot.workers.production import production_worker
 from bot.workers.construction import construction_worker
@@ -49,22 +50,35 @@ async def main():
         dp.include_router(territory_router)
         dp.include_router(ranking_router)
         dp.include_router(research_router)
+        dp.include_router(battle_router)
         dp.include_router(menu_router)
 
         workers.append(
-            asyncio.create_task(production_worker())
+            asyncio.create_task(
+                production_worker(),
+                name="kingdram-production",
+            )
         )
 
         workers.append(
-            asyncio.create_task(construction_worker())
+            asyncio.create_task(
+                construction_worker(bot),
+                name="kingdram-construction",
+            )
         )
 
         workers.append(
-            asyncio.create_task(military_worker())
+            asyncio.create_task(
+                military_worker(),
+                name="kingdram-military",
+            )
         )
 
         workers.append(
-            asyncio.create_task(research_worker())
+            asyncio.create_task(
+                research_worker(),
+                name="kingdram-research",
+            )
         )
 
         print("================================")
@@ -74,10 +88,10 @@ async def main():
         print("Sistema de construcción iniciado.")
         print("Sistema militar iniciado.")
         print("Sistema de investigación iniciado.")
-        print("Sistema económico iniciado.")
-        print("Sistema de vasallaje económico preparado.")
-        print("Sistema de puntuación y clasificación iniciado.")
-        print("Sistema territorial iniciado.")
+        print("Sistema de guerra registrado.")
+        print("Sistema de informes de batalla registrado.")
+        print("Sistema de vasallaje preparado.")
+        print("Sistema territorial registrado.")
         print("Handlers registrados.")
         print("Polling iniciado.")
         print("================================")
@@ -91,7 +105,7 @@ async def main():
         if workers:
             await asyncio.gather(
                 *workers,
-                return_exceptions=True
+                return_exceptions=True,
             )
 
         await close_database()

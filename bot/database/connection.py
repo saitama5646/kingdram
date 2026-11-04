@@ -1,7 +1,7 @@
-
 import asyncpg
 
 from bot.config import DATABASE_URL, BASE_DIR
+
 
 pool = None
 
@@ -16,12 +16,13 @@ async def connect_database():
         dsn=DATABASE_URL,
         min_size=1,
         max_size=10,
-        ssl="require"
+        ssl="require",
     )
 
     schema_files = [
         BASE_DIR / "bot" / "database" / "schema.sql",
         BASE_DIR / "bot" / "database" / "systems.sql",
+        BASE_DIR / "bot" / "database" / "battle.sql",
     ]
 
     try:
@@ -29,16 +30,23 @@ async def connect_database():
             for schema_path in schema_files:
                 if not schema_path.exists():
                     raise FileNotFoundError(
-                        f"No se encontró el esquema: {schema_path}"
+                        f"No se encontró la migración: {schema_path}"
                     )
 
-                schema = schema_path.read_text(encoding="utf-8")
+                schema = schema_path.read_text(
+                    encoding="utf-8"
+                )
 
                 async with connection.transaction():
                     await connection.execute(schema)
 
-        print("Base de datos Kingdram inicializada correctamente.")
-        print("Sistemas económicos, diplomáticos y tecnológicos preparados.")
+                print(
+                    f"Migración aplicada: {schema_path.name}"
+                )
+
+        print(
+            "Base de datos Kingdram inicializada correctamente."
+        )
 
     except Exception:
         await pool.close()
@@ -50,7 +58,9 @@ async def connect_database():
 
 async def get_pool():
     if pool is None:
-        raise RuntimeError("La base de datos no está conectada.")
+        raise RuntimeError(
+            "La base de datos no está conectada."
+        )
 
     return pool
 
@@ -61,4 +71,3 @@ async def close_database():
     if pool is not None:
         await pool.close()
         pool = None
-        print("Conexión con Neon cerrada.")

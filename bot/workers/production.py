@@ -1,15 +1,20 @@
-
 import asyncio
+import logging
 from decimal import Decimal, ROUND_FLOOR
 
 from bot.database.connection import get_pool
 from bot.services.construction import BUILDINGS, get_production
+from bot.services.research import get_research_effects
 
 
 RESOURCES = ("wood", "stone", "gold", "food")
 
+PRODUCTION_INTERVAL_SECONDS = 60
 
-def calculate_production(buildings):
+
+def calculate_production(buildings, research_effects=None):
+    research_effects = research_effects or {}
+
     production = {
         resource: 0
         for resource in RESOURCES
@@ -31,6 +36,18 @@ def calculate_production(buildings):
             building["level"]
         )
 
+    for resource in RESOURCES:
+        bonus = research_effects.get(
+            f"{resource}_production",
+            0
+        )
+
+        multiplier = max(0, 1 + float(bonus))
+
+        production[resource] = int(
+            production[resource] * multiplier
+        )
+
     return production
 
 
@@ -41,10 +58,15 @@ def split_tribute(production, rate):
     rate = Decimal(str(rate))
 
     for resource in RESOURCES:
-        amount = max(0, int(production.get(resource, 0)))
+        amount = max(
+            0,
+            int(production.get(resource, 0))
+        )
 
         tribute_amount = int(
-            (Decimal(amount) * rate).to_integral_value(
+            (
+                Decimal(amount) * rate
+            ).to_integral_value(
                 rounding=ROUND_FLOOR
             )
         )
@@ -53,6 +75,22 @@ def split_tribute(production, rate):
         retained[resource] = amount - tribute_amount
 
     return tribute, retained
+
+
+async def get_realm_research(connection, realm_id):
+    rows = await connection.fetch(
+        """
+        SELECT research_type, level
+        FROM realm_research
+        WHERE realm_id = $1
+        """,
+        realm_id
+    )
+
+    return {
+        row["research_type"]: row["level"]
+        for row in rows
+    }
 
 
 async def produce_resources():
@@ -100,7 +138,19 @@ async def produce_resources():
                     realm_id
                 )
 
-                per_minute = calculate_production(buildings)
+                research_levels = await get_realm_research(
+                    connection,
+                    realm_id
+                )
+
+                research_effects = get_research_effects(
+                    research_levels
+                )
+
+                per_minute = calculate_production(
+                    buildings,
+                    research_effects
+                )
 
                 produced = {
                     resource: amount * elapsed
@@ -109,10 +159,15 @@ async def produce_resources():
 
                 relation = await connection.fetchrow(
                     """
-                    SELECT id, lord_realm_id, tribute_rate
+                    SELECT
+                        id,
+                        lord_realm_id,
+                        vassal_realm_id,
+                        tribute_rate
                     FROM vassalage_relations
                     WHERE vassal_realm_id = $1
                       AND status = 'active'
+                    FOR UPDATE
                     """,
                     realm_id
                 )
@@ -127,6 +182,7 @@ async def produce_resources():
                         resource: 0
                         for resource in RESOURCES
                     }
+
                     retained = produced
 
                 await connection.execute(
@@ -167,14 +223,18 @@ async def produce_resources():
                         """
                         INSERT INTO vassalage_tribute_log (
                             relation_id,
+                            lord_realm_id,
+                            vassal_realm_id,
                             wood,
                             stone,
                             gold,
                             food
                         )
-                        VALUES ($1, $2, $3, $4, $5)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         """,
                         relation["id"],
+                        relation["lord_realm_id"],
+                        relation["vassal_realm_id"],
                         tribute["wood"],
                         tribute["stone"],
                         tribute["gold"],
@@ -183,6 +243,8 @@ async def produce_resources():
 
 
 async def production_worker():
+    print("Sistema de producción iniciado.")
+
     while True:
         try:
             await produce_resources()
@@ -190,7 +252,11 @@ async def production_worker():
         except asyncio.CancelledError:
             raise
 
-        except Exception as error:
-            print(f"Error en producción: {error}")
+        except Exception:
+            logging.exception(
+                "Error en el sistema de producción."
+            )
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(
+            PRODUCTION_INTERVAL_SECONDS
+        )

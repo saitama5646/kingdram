@@ -1,4 +1,3 @@
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -8,43 +7,49 @@ def main_menu_keyboard():
             [
                 InlineKeyboardButton(
                     text="🏰 Mi reino",
-                    callback_data="kingdom"
+                    callback_data="kingdom",
                 ),
                 InlineKeyboardButton(
                     text="📦 Recursos",
-                    callback_data="economy"
-                )
+                    callback_data="economy",
+                ),
             ],
             [
                 InlineKeyboardButton(
                     text="🏗 Edificios",
-                    callback_data="buildings"
+                    callback_data="buildings",
                 ),
                 InlineKeyboardButton(
                     text="🔬 Investigación",
-                    callback_data="research"
-                )
+                    callback_data="research",
+                ),
             ],
             [
                 InlineKeyboardButton(
                     text="⚔ Ejército",
-                    callback_data="army"
+                    callback_data="army",
                 ),
                 InlineKeyboardButton(
                     text="🗺 Territorios",
-                    callback_data="territory"
-                )
+                    callback_data="territory",
+                ),
             ],
             [
                 InlineKeyboardButton(
-                    text="👑 Diplomacia",
-                    callback_data="diplomacy"
+                    text="🛡 Guerra",
+                    callback_data="battle",
                 ),
                 InlineKeyboardButton(
+                    text="👑 Diplomacia",
+                    callback_data="diplomacy",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🏆 Clasificación",
-                    callback_data="ranking"
-                )
-            ]
+                    callback_data="ranking",
+                ),
+            ],
         ]
     )
 
@@ -55,7 +60,7 @@ def create_realm_keyboard():
             [
                 InlineKeyboardButton(
                     text="⚒ Fundar mi reino",
-                    callback_data="create_realm"
+                    callback_data="create_realm",
                 )
             ]
         ]
@@ -68,7 +73,7 @@ def back_to_menu_keyboard():
             [
                 InlineKeyboardButton(
                     text="↩ Volver al menú",
-                    callback_data="main_menu"
+                    callback_data="main_menu",
                 )
             ]
         ]
