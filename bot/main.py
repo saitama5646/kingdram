@@ -24,6 +24,7 @@ from bot.handlers.ranking import router as ranking_router
 from bot.handlers.research import router as research_router
 from bot.handlers.battle import router as battle_router
 from bot.handlers.diplomacy import router as diplomacy_router
+from bot.handlers.treaties import router as treaties_router
 
 from bot.workers.production import production_worker
 from bot.workers.construction import construction_worker
@@ -63,6 +64,7 @@ async def main():
         dp.include_router(start_router)
         dp.include_router(menu_router)
         dp.include_router(diplomacy_router)
+        dp.include_router(treaties_router)
         dp.include_router(dashboard_router)
         dp.include_router(kingdom_router)
         dp.include_router(buildings_router)
@@ -92,7 +94,7 @@ async def main():
                 name="kingdram-research",
             ),
             asyncio.create_task(
-                missions_worker(),
+                missions_worker(bot),
                 name="kingdram-missions",
             ),
             asyncio.create_task(

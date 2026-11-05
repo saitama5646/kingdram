@@ -560,37 +560,6 @@ async def save_report(
         json.dumps(infrastructure_log),
     )
 
-    if vassalage_unlocked:
-        await connection.execute(
-            """
-            INSERT INTO vassalage_requests (
-                lord_realm_id,
-                vassal_realm_id,
-                destruction_ratio,
-                status
-            )
-            SELECT $1, $2, $3, 'pending'
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM vassalage_relations
-                WHERE vassal_realm_id = $2
-                  AND status = 'active'
-            )
-            AND NOT EXISTS (
-                SELECT 1
-                FROM vassalage_requests
-                WHERE vassal_realm_id = $2
-                  AND status = 'pending'
-            )
-            ON CONFLICT (vassal_realm_id)
-            WHERE status = 'pending'
-            DO NOTHING
-            """,
-            attacker_realm_id,
-            defender_realm_id,
-            infrastructure_damage,
-        )
-
     attacker_lost = losses_map(attacker_original, attackers)
     defender_lost = losses_map(defender_original, defenders)
 
@@ -863,8 +832,106 @@ async def process_arrival(connection, mission):
         mission_id,
     )
 
+    return report_id, outcome
 
-async def missions_worker():
+
+async def send_battle_notifications(bot, report_id):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        report = await connection.fetchrow(
+            """
+            SELECT
+                br.*,
+                attacker.name AS attacker_name,
+                defender.name AS defender_name
+            FROM battle_reports br
+            JOIN realms attacker
+              ON attacker.id = br.attacker_realm_id
+            JOIN realms defender
+              ON defender.id = br.defender_realm_id
+            WHERE br.id = $1
+            """,
+            report_id,
+        )
+
+    if not report:
+        return
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    if report["outcome"] == "attacker_victory":
+        result = f"🏆 Victoria de {report['attacker_name']}"
+    elif report["outcome"] == "defender_victory":
+        result = f"🛡️ Defensa exitosa de {report['defender_name']}"
+    elif report["outcome"] == "inconclusive":
+        result = "⚖️ Combate inconcluso"
+    else:
+        result = "☠️ Destrucción mutua"
+
+    text = (
+        f"📜 <b>¡BATALLA RESUELTA!</b>\n\n"
+        f"⚔️ <b>{report['attacker_name']}</b> "
+        f"vs. <b>{report['defender_name']}</b>\n\n"
+        f"{result}\n"
+        f"🔁 Rondas: <b>{report['rounds']}</b>\n\n"
+        f"💀 Bajas del atacante: "
+        f"<b>{report['attacker_losses']:,}</b>\n"
+        f"💀 Bajas del defensor: "
+        f"<b>{report['defender_losses']:,}</b>\n"
+        f"🏰 Infraestructura dañada: "
+        f"<b>{float(report['infrastructure_damage'] or 0) * 100:.1f}%</b>\n\n"
+        f"📖 El informe completo ya está disponible."
+    )
+
+    report_button = InlineKeyboardButton(
+        text="📜 Abrir informe de batalla",
+        callback_data=f"battle:report:{report_id}",
+    )
+
+    attacker_buttons = [[report_button]]
+
+    if (
+        report["vassalage_unlocked"]
+        and report["outcome"] == "attacker_victory"
+    ):
+        attacker_buttons.append([
+            InlineKeyboardButton(
+                text="👑 Proponer vasallaje",
+                callback_data=f"battle:vassal:propose:{report_id}",
+            )
+        ])
+
+    defender_buttons = [[report_button]]
+
+    notifications = [
+        (
+            int(report["attacker_owner_id"]),
+            InlineKeyboardMarkup(inline_keyboard=attacker_buttons),
+        ),
+        (
+            int(report["defender_owner_id"]),
+            InlineKeyboardMarkup(inline_keyboard=defender_buttons),
+        ),
+    ]
+
+    for owner_id, markup in notifications:
+        try:
+            await bot.send_message(
+                owner_id,
+                text,
+                reply_markup=markup,
+                parse_mode="HTML",
+            )
+        except Exception:
+            logging.exception(
+                "No se pudo notificar la batalla #%s al jugador %s.",
+                report_id,
+                owner_id,
+            )
+
+
+async def missions_worker(bot):
     print("Sistema de misiones militares iniciado.")
 
     while True:
@@ -899,10 +966,16 @@ async def missions_worker():
                         )
 
                         if mission:
-                            await process_arrival(
+                            report_id, outcome = await process_arrival(
                                 connection,
                                 mission,
                             )
+
+                    if mission:
+                        await send_battle_notifications(
+                            bot,
+                            report_id,
+                        )
 
                 returning = await connection.fetch(
                     """

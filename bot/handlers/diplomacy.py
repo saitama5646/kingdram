@@ -63,6 +63,12 @@ def diplomacy_keyboard(data):
             callback_data="alliance:create",
         )
 
+    if alliance:
+        builder.button(
+            text="📜 Tratados diplomáticos",
+            callback_data="alliance:treaties",
+        )
+
     builder.button(
         text="🔄 Actualizar diplomacia",
         callback_data="diplomacy",

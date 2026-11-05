@@ -17,6 +17,8 @@ from bot.services.missions import (
     get_player_missions,
 )
 
+from bot.services.vassalage import create_vassalage_request
+
 from bot.keyboards.battle import (
     battle_targets_keyboard,
     battle_confirm_keyboard,
@@ -822,7 +824,7 @@ async def battle_report_handler(callback: CallbackQuery):
         lines.extend([
             "",
             "👑 <b>Se ha desbloqueado el vasallaje.</b>",
-            "📨 Se ha enviado una solicitud de sometimiento al reino derrotado.",
+            "📜 El vencedor puede decidir si propone el sometimiento.",
         ])
 
     round_log = report["round_log"] or []
@@ -876,3 +878,144 @@ async def battle_report_handler(callback: CallbackQuery):
         reply_markup=battle_report_keyboard(report["id"]),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data.startswith("battle:vassal:propose:"))
+async def propose_vassalage_handler(callback: CallbackQuery):
+    try:
+        report_id = int(callback.data.split(":")[3])
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Informe no válido.",
+            show_alert=True,
+        )
+        return
+
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        report = await connection.fetchrow(
+            """
+            SELECT
+                attacker_realm_id,
+                defender_realm_id,
+                attacker_owner_id,
+                defender_owner_id,
+                infrastructure_damage,
+                vassalage_unlocked,
+                outcome
+            FROM battle_reports
+            WHERE id = $1
+            """,
+            report_id,
+        )
+
+    if not report:
+        await callback.answer(
+            "El informe no existe.",
+            show_alert=True,
+        )
+        return
+
+    if int(report["attacker_owner_id"]) != callback.from_user.id:
+        await callback.answer(
+            "Solo el vencedor puede proponer el vasallaje.",
+            show_alert=True,
+        )
+        return
+
+    if (
+        report["outcome"] != "attacker_victory"
+        or not report["vassalage_unlocked"]
+    ):
+        await callback.answer(
+            "Esta batalla no desbloqueó el vasallaje.",
+            show_alert=True,
+        )
+        return
+
+    success, message = await create_vassalage_request(
+        int(report["attacker_realm_id"]),
+        int(report["defender_realm_id"]),
+        float(report["infrastructure_damage"]),
+    )
+
+    await callback.answer(
+        message,
+        show_alert=not success,
+    )
+
+    if not success:
+        return
+
+    async with pool.acquire() as connection:
+        names = await connection.fetchrow(
+            """
+            SELECT
+                attacker.name AS attacker_name,
+                defender.name AS defender_name
+            FROM realms attacker
+            JOIN realms defender
+              ON defender.id = $2
+            WHERE attacker.id = $1
+            """,
+            report["attacker_realm_id"],
+            report["defender_realm_id"],
+        )
+
+    if names:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        async with pool.acquire() as connection:
+            request_id = await connection.fetchval(
+                """
+                SELECT id
+                FROM vassalage_requests
+                WHERE lord_realm_id = $1
+                  AND vassal_realm_id = $2
+                  AND status = 'pending'
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                report["attacker_realm_id"],
+                report["defender_realm_id"],
+            )
+
+        if not request_id:
+            return
+
+        await callback.bot.send_message(
+            int(report["defender_owner_id"]),
+            (
+                "👑 <b>PROPUESTA DE VASALLAJE</b>\\n\\n"
+                f"🏰 <b>{escape(names['attacker_name'])}</b> "
+                "te propone convertirte en su vasallo.\\n\\n"
+                f"🏰 Tu reino: <b>{escape(names['defender_name'])}</b>\\n"
+                f"📉 Destrucción de infraestructura: "
+                f"<b>{float(report['infrastructure_damage']) * 100:.1f}%</b>\\n\\n"
+                "Puedes aceptar o rechazar la propuesta."
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✓ Aceptar vasallaje",
+                            callback_data=f"diplomacy:vassal:accept:{request_id}",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="✕ Rechazar",
+                            callback_data=f"diplomacy:vassal:reject:{request_id}",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="👑 Abrir Diplomacia",
+                            callback_data="diplomacy",
+                        )
+                    ],
+                ]
+            ),
+            parse_mode="HTML",
+        )

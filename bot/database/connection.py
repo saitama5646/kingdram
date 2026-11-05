@@ -27,6 +27,7 @@ async def connect_database():
         BASE_DIR / "bot" / "database" / "queues.sql",
         BASE_DIR / "bot" / "database" / "world_layout.sql",
         BASE_DIR / "bot" / "database" / "diplomacy.sql",
+        BASE_DIR / "bot" / "database" / "treaties.sql",
     ]
 
     try:
