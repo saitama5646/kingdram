@@ -332,15 +332,19 @@ async def render_territory(
     realms = await connection.fetch(
         """
         SELECT
-            position,
-            id,
-            name,
-            level,
-            power
-        FROM realms
-        WHERE continent = $1
-          AND region = $2
-        ORDER BY position
+            r.position,
+            r.id,
+            r.name,
+            r.level,
+            r.power,
+            p.first_name,
+            p.username
+        FROM realms r
+        LEFT JOIN players p
+          ON p.id = r.owner_id
+        WHERE r.continent = $1
+          AND r.region = $2
+        ORDER BY r.position
         """,
         continent,
         territory,
@@ -357,25 +361,59 @@ async def render_territory(
         f"🌍 Continente: <b>{continent}</b>",
         f"🏞 Territorio: <b>{territory}</b>",
         "",
-        "Selecciona una posición para consultar "
-        "el reino que la ocupa.",
-        "",
-        f"🏰 Reinos establecidos: "
-        f"<b>{len(occupied)}/20</b>",
-        f"📍 Posiciones libres: "
-        f"<b>{20 - len(occupied)}</b>",
-        "",
-        "<b>POSICIONES</b>",
-        "🏰 Ocupada · Libre",
+        "<b>📍 REINOS Y JUGADORES</b>",
         "",
     ]
 
-    lines.append(
-        "Tu reino está aquí: "
+    for position in range(
+        1,
+        POSITIONS_PER_TERRITORY + 1,
+    ):
+        target = occupied.get(position)
+
+        if target:
+            realm_name = escape(
+                target["name"] or "Reino sin nombre"
+            )
+
+            player_name = escape(
+                target["first_name"]
+                or target["username"]
+                or "Jugador"
+            )
+
+            lines.append(
+                f"<b>{position:02d}</b> — 🏰 "
+                f"<b>{realm_name}</b>"
+            )
+
+            lines.append(
+                f"     👑 {player_name}"
+            )
+
+        else:
+            lines.append(
+                f"<b>{position:02d}</b> — 🟢 "
+                "<i>Posición libre</i>"
+            )
+
+        lines.append("")
+
+    lines.extend([
+        "━━━━━━━━━━━━━━━━━━",
+        f"🏰 Reinos establecidos: "
+        f"<b>{len(occupied)}/{POSITIONS_PER_TERRITORY}</b>",
+        f"📍 Posiciones libres: "
+        f"<b>{POSITIONS_PER_TERRITORY - len(occupied)}</b>",
+        "",
+        "Selecciona un número para consultar "
+        "los detalles de esa posición.",
+        "",
+        "📍 Tu reino está aquí: "
         f"<code>{realm['continent']}:"
         f"{realm['region']}:"
-        f"{realm['position']}</code>"
-    )
+        f"{realm['position']}</code>",
+    ])
 
     await callback.message.edit_text(
         "\n".join(lines),
