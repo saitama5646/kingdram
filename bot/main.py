@@ -13,6 +13,7 @@ from bot.web import RuntimeState, start_health_server
 
 from bot.handlers.start import router as start_router
 from bot.handlers.menu import router as menu_router
+from bot.handlers.dashboard import router as dashboard_router
 from bot.handlers.kingdom import router as kingdom_router
 from bot.handlers.buildings import router as buildings_router
 from bot.handlers.army import router as army_router
@@ -59,6 +60,7 @@ async def main():
 
         dp.include_router(start_router)
         dp.include_router(menu_router)
+        dp.include_router(dashboard_router)
         dp.include_router(kingdom_router)
         dp.include_router(buildings_router)
         dp.include_router(army_router)
@@ -78,15 +80,15 @@ async def main():
                 name="kingdram-construction",
             ),
             asyncio.create_task(
-                military_worker(),
+                military_worker(bot),
                 name="kingdram-military",
             ),
             asyncio.create_task(
-                research_worker(),
+                research_worker(bot),
                 name="kingdram-research",
             ),
             asyncio.create_task(
-                missions_worker(),
+                missions_worker(bot),
                 name="kingdram-missions",
             ),
             asyncio.create_task(
@@ -112,6 +114,8 @@ async def main():
         print("Sistema de alertas de ataques iniciado.")
         print("Sistema de guerra registrado.")
         print("Sistema territorial registrado.")
+        print("Panel dinámico registrado.")
+        print("Notificaciones de finalización activadas.")
         print("Menú persistente conectado.")
         print("Handlers registrados.")
         print("Servidor HTTP listo.")

@@ -7,7 +7,6 @@ from aiogram.types import (
 
 
 def persistent_menu_keyboard():
-    """Teclado inferior permanente reducido a cuatro accesos."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -26,9 +25,14 @@ def persistent_menu_keyboard():
 
 
 def main_menu_keyboard():
-    """Teclado inline completo adjunto al mensaje KINGDRAM."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔄 Actualizar panel",
+                    callback_data="dashboard:refresh",
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="🏰 Reino",
@@ -80,7 +84,6 @@ def main_menu_keyboard():
 
 
 def create_realm_keyboard():
-    """Teclado para fundar un reino."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -94,7 +97,6 @@ def create_realm_keyboard():
 
 
 def back_to_menu_keyboard():
-    """Botón para regresar al menú principal."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [

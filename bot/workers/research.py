@@ -1,27 +1,32 @@
-
 import asyncio
 import logging
+
+from aiogram import Bot
 
 from bot.database.connection import get_pool
 from bot.services.research import RESEARCH
 
 
-async def finish_research():
+async def finish_research(bot: Bot):
     pool = await get_pool()
+    notifications = []
 
     async with pool.acquire() as connection:
         async with connection.transaction():
             completed = await connection.fetch(
                 """
                 SELECT
-                    id,
-                    realm_id,
-                    research_type,
-                    target_level
-                FROM research_queue
-                WHERE finishes_at <= NOW()
-                ORDER BY finishes_at, id
-                FOR UPDATE SKIP LOCKED
+                    rq.id,
+                    rq.realm_id,
+                    rq.research_type,
+                    rq.target_level,
+                    r.owner_id,
+                    r.name AS realm_name
+                FROM research_queue rq
+                JOIN realms r ON r.id = rq.realm_id
+                WHERE rq.finishes_at <= NOW()
+                ORDER BY rq.finishes_at, rq.id
+                FOR UPDATE OF rq SKIP LOCKED
                 """
             )
 
@@ -43,8 +48,9 @@ async def finish_research():
                         """,
                         item["id"],
                     )
-
                     continue
+
+                research_name = RESEARCH[research_type]["name"]
 
                 await connection.execute(
                     """
@@ -80,8 +86,7 @@ async def finish_research():
                     realm_id,
                     (
                         f"Investigación completada: "
-                        f"{RESEARCH[research_type]['name']} "
-                        f"nivel {target_level}."
+                        f"{research_name} nivel {target_level}."
                     ),
                 )
 
@@ -93,13 +98,36 @@ async def finish_research():
                     item["id"],
                 )
 
+                notifications.append({
+                    "owner_id": item["owner_id"],
+                    "realm_name": item["realm_name"],
+                    "research_name": research_name,
+                    "target_level": target_level,
+                })
 
-async def research_worker():
+    for item in notifications:
+        try:
+            await bot.send_message(
+                item["owner_id"],
+                "🔬 <b>¡Investigación completada!</b>\n\n"
+                f"Tu reino <b>{item['realm_name']}</b> "
+                f"ha desarrollado <b>{item['research_name']}</b> "
+                f"hasta el nivel <b>{item['target_level']}</b>.\n\n"
+                "Los efectos de esta tecnología ya están activos."
+            )
+        except Exception:
+            logging.exception(
+                "No se pudo enviar la notificación "
+                "de investigación completada."
+            )
+
+
+async def research_worker(bot: Bot):
     print("Sistema de investigación iniciado.")
 
     while True:
         try:
-            await finish_research()
+            await finish_research(bot)
 
         except asyncio.CancelledError:
             raise
