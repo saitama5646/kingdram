@@ -89,23 +89,172 @@ def update_morale(
     )
 
 
-def calculate_damage(attackers, defenders, morale):
-    attack = army_power(attackers, "attack")
-    defense = army_power(defenders, "defense")
-    count = army_quantity(defenders)
 
-    if attack <= 0 or count <= 0:
+
+def calculate_damage(attackers, defenders, morale):
+    """
+    Daño ofensivo bruto de una salva.
+    La defensa ya no reduce artificialmente el daño global.
+    Los escudos y el blindaje se aplican individualmente.
+    """
+    if not attackers or not defenders:
         return 0.0
 
-    defense_per_unit = max(1.0, defense / count)
-    mitigation = 100.0 / (100.0 + defense_per_unit * 2.0)
+    attack = army_power(attackers, "attack")
 
     variation = random.uniform(
         1.0 - DAMAGE_VARIATION,
         1.0 + DAMAGE_VARIATION,
     )
 
-    return attack * mitigation * morale * variation
+    return max(0.0, attack * morale * variation)
+
+
+def expand_combat_units(troops):
+    """
+    Convierte las cantidades en unidades individuales.
+    Cada unidad conserva el daño acumulado en su blindaje.
+    """
+    units = []
+
+    for troop in troops:
+        unit_type = troop["unit_type"]
+        quantity = max(0, int(troop["quantity"]))
+
+        for _ in range(quantity):
+            units.append({
+                "unit_type": unit_type,
+                "hull_damage": 0.0,
+            })
+
+    return units
+
+
+def aggregate_combat_units(units):
+    quantities = {}
+
+    for unit in units:
+        unit_type = unit["unit_type"]
+        quantities[unit_type] = quantities.get(unit_type, 0) + 1
+
+    return [
+        {
+            "unit_type": unit_type,
+            "quantity": quantity,
+        }
+        for unit_type, quantity in sorted(quantities.items())
+        if quantity > 0
+    ]
+
+
+def resolve_volley(shooters, targets, morale):
+    """
+    Cada unidad realiza un disparo contra un objetivo aleatorio.
+
+    Los escudos absorben primero el impacto y se regeneran
+    al comenzar la siguiente ronda.
+
+    El daño que supera el escudo se acumula en el blindaje.
+    A partir del 70% de daño estructural existe probabilidad
+    de destrucción, que aumenta hasta el 100%.
+    """
+    if not shooters or not targets:
+        return 0.0, targets
+
+    shield_remaining = [
+        float(
+            UNITS.get(target["unit_type"], {}).get("shield", 0)
+        )
+        for target in targets
+    ]
+
+    total_damage = 0.0
+
+    for shooter in shooters:
+        if not targets:
+            break
+
+        definition = UNITS.get(shooter["unit_type"], {})
+        base_attack = float(definition.get("attack", 0))
+
+        if base_attack <= 0:
+            continue
+
+        variation = random.uniform(
+            1.0 - DAMAGE_VARIATION,
+            1.0 + DAMAGE_VARIATION,
+        )
+
+        shot_damage = base_attack * morale * variation
+        target_index = random.randrange(len(targets))
+        target = targets[target_index]
+
+        absorbed = min(
+            shield_remaining[target_index],
+            shot_damage,
+        )
+
+        shield_remaining[target_index] -= absorbed
+
+        hull_damage = max(0.0, shot_damage - absorbed)
+
+        target["hull_damage"] += hull_damage
+        total_damage += shot_damage
+
+    survivors = []
+
+    for target in targets:
+        definition = UNITS.get(target["unit_type"], {})
+        hull = max(1.0, float(definition.get("hull", 100)))
+
+        damage_ratio = target["hull_damage"] / hull
+
+        if damage_ratio >= 1.0:
+            continue
+
+        if damage_ratio >= 0.70:
+            destruction_chance = min(
+                1.0,
+                max(0.0, (damage_ratio - 0.70) / 0.30),
+            )
+
+            if random.random() < destruction_chance:
+                continue
+
+        survivors.append(target)
+
+    return total_damage, survivors
+
+
+def resolve_battle_round(
+    attackers,
+    defenders,
+    attacker_morale,
+    defender_morale,
+):
+    """
+    Ambos ejércitos disparan antes de aplicar las destrucciones.
+    Así una unidad destruida durante la ronda todavía puede
+    responder en esa misma ronda.
+    """
+    attacker_damage, defenders_after = resolve_volley(
+        attackers,
+        defenders,
+        attacker_morale,
+    )
+
+    defender_damage, attackers_after = resolve_volley(
+        defenders,
+        attackers,
+        defender_morale,
+    )
+
+    return (
+        attackers_after,
+        defenders_after,
+        attacker_damage,
+        defender_damage,
+    )
 
 
 def calculate_losses(troops, damage):
@@ -679,6 +828,9 @@ async def process_arrival(connection, mission):
     round_number = 0
     round_log = []
 
+    attacker_combat_units = expand_combat_units(attackers)
+    defender_combat_units = expand_combat_units(defenders)
+
     logging.info(
         "MISIÓN %s: combate iniciado. A=%s D=%s",
         mission_id,
@@ -687,39 +839,36 @@ async def process_arrival(connection, mission):
     )
 
     while (
-        attackers
-        and defenders
+        attacker_combat_units
+        and defender_combat_units
         and round_number < MAX_BATTLE_ROUNDS
     ):
         round_number += 1
 
-        attacker_before = army_quantity(attackers)
-        defender_before = army_quantity(defenders)
+        attacker_before = len(attacker_combat_units)
+        defender_before = len(defender_combat_units)
 
-        attacker_damage = calculate_damage(
-            attackers,
-            defenders,
+        (
+            attacker_combat_units,
+            defender_combat_units,
+            attacker_damage,
+            defender_damage,
+        ) = resolve_battle_round(
+            attacker_combat_units,
+            defender_combat_units,
             attacker_morale,
-        )
-
-        defender_damage = calculate_damage(
-            defenders,
-            attackers,
             defender_morale,
         )
 
-        attacker_losses_map = calculate_losses(
-            attackers,
-            defender_damage,
-        )
+        attackers = aggregate_combat_units(attacker_combat_units)
+        defenders = aggregate_combat_units(defender_combat_units)
 
-        defender_losses_map = calculate_losses(
-            defenders,
-            attacker_damage,
+        attacker_losses = (
+            attacker_before - len(attacker_combat_units)
         )
-
-        attacker_losses = sum(attacker_losses_map.values())
-        defender_losses = sum(defender_losses_map.values())
+        defender_losses = (
+            defender_before - len(defender_combat_units)
+        )
 
         attacker_morale = update_morale(
             attacker_morale,
@@ -737,37 +886,30 @@ async def process_arrival(connection, mission):
             attacker_before,
         )
 
-        attackers = apply_losses(
-            attackers,
-            attacker_losses_map,
-        )
-
-        defenders = apply_losses(
-            defenders,
-            defender_losses_map,
-        )
-
         round_log.append({
             "round": round_number,
             "attacker_damage": round(attacker_damage, 2),
             "defender_damage": round(defender_damage, 2),
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
-            "attacker_remaining": army_quantity(attackers),
-            "defender_remaining": army_quantity(defenders),
+            "attacker_remaining": len(attacker_combat_units),
+            "defender_remaining": len(defender_combat_units),
             "attacker_morale": round(attacker_morale, 3),
             "defender_morale": round(defender_morale, 3),
         })
 
         logging.info(
-            "MISIÓN %s | RONDA %s | Bajas A=%s D=%s | Moral A=%.2f D=%.2f",
+            "MISIÓN %s | RONDA %s | Bajas A=%s D=%s | Restantes A=%s D=%s",
             mission_id,
             round_number,
             attacker_losses,
             defender_losses,
-            attacker_morale,
-            defender_morale,
+            len(attacker_combat_units),
+            len(defender_combat_units),
         )
+
+    attackers = aggregate_combat_units(attacker_combat_units)
+    defenders = aggregate_combat_units(defender_combat_units)
 
     await save_attacker_survivors(
         connection,
