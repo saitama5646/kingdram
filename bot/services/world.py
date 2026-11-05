@@ -1,4 +1,3 @@
-
 from bot.database.connection import get_pool
 
 
@@ -6,18 +5,14 @@ POSITIONS_PER_REGION = 50
 REGIONS_PER_CONTINENT = 20
 MAX_CONTINENTS = 100
 
-# Distancia jerárquica del mapa.
-# El salto entre continentes domina sobre regiones y posiciones.
-CONTINENT_DISTANCE = 20000
-REGION_DISTANCE = 95
-POSITION_DISTANCE = 1
+# Mapa medieval de gran escala.
+CONTINENT_DISTANCE = 50000
+REGION_DISTANCE = 250
+POSITION_DISTANCE = 5
 
-# Tiempo base de desplazamiento.
-BASE_TRAVEL_SECONDS = 30
-
-# Velocidad base del sistema de misiones.
-# Distancia / velocidad = tiempo de viaje.
-TRAVEL_TIME_FACTOR = 10
+# El desplazamiento ahora requiere más tiempo.
+BASE_TRAVEL_SECONDS = 60
+TRAVEL_TIME_FACTOR = 20
 
 
 def normalize_coordinates(coordinates):
@@ -86,13 +81,12 @@ def calculate_travel_time(
         + distance * TRAVEL_TIME_FACTOR / effective_speed
     )
 
-    return max(30, int(seconds))
+    return max(60, int(seconds))
 
 
 def calculate_mission_speed(troops):
     """
-    Devuelve la velocidad de la unidad más lenta
-    presente en la expedición.
+    La velocidad de la expedición es la de su unidad más lenta.
     """
     from bot.services.military import UNITS
 
@@ -109,7 +103,9 @@ def calculate_mission_speed(troops):
         if not unit:
             continue
 
-        speeds.append(float(unit.get("speed", 1)))
+        speeds.append(
+            float(unit.get("speed", 1))
+        )
 
     if not speeds:
         return 0

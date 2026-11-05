@@ -27,6 +27,7 @@ from bot.workers.construction import construction_worker
 from bot.workers.military import military_worker
 from bot.workers.research import research_worker
 from bot.workers.missions import missions_worker
+from bot.workers.attack_warning import attack_warning_worker
 
 
 async def main():
@@ -58,7 +59,6 @@ async def main():
 
         dp.include_router(start_router)
         dp.include_router(menu_router)
-
         dp.include_router(kingdom_router)
         dp.include_router(buildings_router)
         dp.include_router(army_router)
@@ -89,6 +89,10 @@ async def main():
                 missions_worker(),
                 name="kingdram-missions",
             ),
+            asyncio.create_task(
+                attack_warning_worker(bot),
+                name="kingdram-attack-warning",
+            ),
         ])
 
         await bot.delete_webhook(
@@ -105,6 +109,7 @@ async def main():
         print("Sistema militar iniciado.")
         print("Sistema de investigación iniciado.")
         print("Sistema de misiones militares iniciado.")
+        print("Sistema de alertas de ataques iniciado.")
         print("Sistema de guerra registrado.")
         print("Sistema territorial registrado.")
         print("Menú persistente conectado.")
