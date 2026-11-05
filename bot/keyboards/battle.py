@@ -10,7 +10,7 @@ UNIT_ORDER = (
 
 def war_menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚔ Campañas militares", callback_data="battle:campaigns")],
+        [InlineKeyboardButton(text="🗺 Atacar desde el mapa", callback_data="world")],
         [InlineKeyboardButton(text="🚩 Expediciones activas", callback_data="missions")],
         [InlineKeyboardButton(text="📜 Resultados de batallas", callback_data="battle:history")],
         [InlineKeyboardButton(text="↩ Menú principal", callback_data="main_menu")],
@@ -41,7 +41,7 @@ def battle_targets_keyboard(targets):
 def battle_confirm_keyboard(realm_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🪖 Preparar ejército", callback_data=f"battle:prepare:{realm_id}")],
-        [InlineKeyboardButton(text="↩ Cancelar", callback_data="battle:campaigns")],
+        [InlineKeyboardButton(text="↩ Cancelar", callback_data="battle")],
         [InlineKeyboardButton(text="⌂ Menú principal", callback_data="main_menu")],
     ])
 
@@ -98,7 +98,7 @@ def troop_selection_keyboard(quantities, available):
 
 def battle_back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚔ Buscar otro objetivo", callback_data="battle:campaigns")],
+        [InlineKeyboardButton(text="🗺 Volver al mapa", callback_data="world")],
         [InlineKeyboardButton(text="🚩 Mis expediciones", callback_data="missions")],
         [InlineKeyboardButton(text="📜 Resultados anteriores", callback_data="battle:history")],
         [InlineKeyboardButton(text="⚔ Menú de Guerra", callback_data="battle")],

@@ -196,7 +196,7 @@ def realm_detail_keyboard(
 
     if owner_id != current_user_id:
         builder.button(
-            text="⚔ Preparar campaña",
+            text="⚔ Atacar reino",
             callback_data=f"battle:target:{realm_id}",
         )
 
@@ -334,6 +334,7 @@ async def render_territory(
         SELECT
             r.position,
             r.id,
+            r.owner_id,
             r.name,
             r.level,
             r.power,
@@ -365,10 +366,10 @@ async def render_territory(
         "",
     ]
 
-    for position, target in sorted(occupied.items()):
-        realm_name = escape(
-            target["name"] or "Reino sin nombre"
-        )
+    player_groups = {}
+
+    for target in realms:
+        owner_id = target["owner_id"]
 
         player_name = escape(
             target["first_name"]
@@ -376,14 +377,30 @@ async def render_territory(
             or "Jugador"
         )
 
+        if owner_id not in player_groups:
+            player_groups[owner_id] = {
+                "player_name": player_name,
+                "realms": [],
+            }
+
+        player_groups[owner_id]["realms"].append(target)
+
+    for group in player_groups.values():
         lines.append(
-            f"<b>{position:02d}</b> — 🏰 "
-            f"<b>{realm_name}</b>"
+            f"👑 <b>{group['player_name']}</b>"
         )
 
-        lines.append(
-            f"     👑 {player_name}"
-        )
+        for target in group["realms"]:
+            realm_name = escape(
+                target["name"] or "Reino sin nombre"
+            )
+
+            position = int(target["position"])
+
+            lines.append(
+                f"   🏰 <b>{realm_name}</b> "
+                f"— Posición <b>{position:02d}</b>"
+            )
 
         lines.append("")
 

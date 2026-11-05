@@ -204,32 +204,14 @@ async def war_menu(callback: CallbackQuery):
 async def open_campaigns(callback: CallbackQuery):
     await callback.answer()
 
-    data = await get_battle_targets(callback.from_user.id)
-
-    if not data:
-        await callback.message.edit_text(
-            "Primero debes fundar un reino.",
-            reply_markup=war_menu_keyboard(),
-        )
-        return
-
-    targets = data["targets"]
-
-    if not targets:
-        await callback.message.edit_text(
-            "⚔ <b>CAMPAÑAS MILITARES</b>\n\n"
-            "No hay reinos disponibles como objetivo.",
-            reply_markup=war_menu_keyboard(),
-            parse_mode="HTML",
-        )
-        return
-
     await callback.message.edit_text(
-        "⚔ <b>CAMPAÑAS MILITARES</b>\n\n"
-        "Selecciona un reino para preparar una expedición militar.\n\n"
-        "Las tropas viajarán según la distancia y la velocidad "
-        "de la unidad más lenta.",
-        reply_markup=battle_targets_keyboard(targets),
+        "⚔ <b>CAMPAÑAS MILITARES</b>\\n\\n"
+        "Los ataques se inician desde el mapa de territorios.\\n\\n"
+        "Explora un territorio, selecciona un reino enemigo "
+        "y pulsa <b>Atacar reino</b>.\\n\\n"
+        "Desde aquí puedes consultar tus expediciones "
+        "y los informes de batalla.",
+        reply_markup=war_menu_keyboard(),
         parse_mode="HTML",
     )
 
