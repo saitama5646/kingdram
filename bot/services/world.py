@@ -1,14 +1,18 @@
 from bot.database.connection import get_pool
 
 
-POSITIONS_PER_REGION = 50
-REGIONS_PER_CONTINENT = 20
+POSITIONS_PER_TERRITORY = 20
+TERRITORIES_PER_CONTINENT = 3
 MAX_CONTINENTS = 100
+
+POSITIONS_PER_CONTINENT = (
+    POSITIONS_PER_TERRITORY
+    * TERRITORIES_PER_CONTINENT
+)
 
 TOTAL_WORLD_POSITIONS = (
     MAX_CONTINENTS
-    * REGIONS_PER_CONTINENT
-    * POSITIONS_PER_REGION
+    * POSITIONS_PER_CONTINENT
 )
 
 CONTINENT_DISTANCE = 50000
@@ -25,10 +29,11 @@ def normalize_coordinates(coordinates):
 
     if len(coordinates) != 3:
         raise ValueError(
-            "Las coordenadas deben contener continente, región y posición."
+            "Las coordenadas deben contener continente, "
+            "territorio y posición."
         )
 
-    continent, region, position = (
+    continent, territory, position = (
         int(coordinates[0]),
         int(coordinates[1]),
         int(coordinates[2]),
@@ -37,30 +42,30 @@ def normalize_coordinates(coordinates):
     if not 1 <= continent <= MAX_CONTINENTS:
         raise ValueError("Continente fuera de los límites del mapa.")
 
-    if not 1 <= region <= REGIONS_PER_CONTINENT:
-        raise ValueError("Región fuera de los límites del continente.")
+    if not 1 <= territory <= TERRITORIES_PER_CONTINENT:
+        raise ValueError("Territorio fuera de los límites del continente.")
 
-    if not 1 <= position <= POSITIONS_PER_REGION:
-        raise ValueError("Territorio fuera de los límites de la región.")
+    if not 1 <= position <= POSITIONS_PER_TERRITORY:
+        raise ValueError("Posición fuera de los límites del territorio.")
 
-    return continent, region, position
+    return continent, territory, position
 
 
 def format_coordinates(coordinates):
-    continent, region, position = normalize_coordinates(
+    continent, territory, position = normalize_coordinates(
         coordinates
     )
 
-    return f"{continent}:{region}:{position}"
+    return f"{continent}:{territory}:{position}"
 
 
 def calculate_distance(origin, target):
-    oc, ore, op = normalize_coordinates(origin)
-    tc, tre, tp = normalize_coordinates(target)
+    oc, ot, op = normalize_coordinates(origin)
+    tc, tt, tp = normalize_coordinates(target)
 
     return (
         abs(tc - oc) * CONTINENT_DISTANCE
-        + abs(tre - ore) * REGION_DISTANCE
+        + abs(tt - ot) * REGION_DISTANCE
         + abs(tp - op) * POSITION_DISTANCE
     )
 
@@ -145,108 +150,68 @@ async def assign_world_position(connection, realm_id):
                 realm["position"],
             ))
 
-        # Primera búsqueda: probar 1.000 coordenadas aleatorias.
+        # Buscar el primer continente que todavía tenga
+        # alguna posición libre. Nunca se salta a otro
+        # continente mientras este no esté completo.
         selected = await connection.fetchrow(
             """
-            WITH candidates AS (
+            WITH first_available AS (
+                SELECT continents.continent
+                FROM generate_series(1, $1) AS continents(continent)
+                WHERE (
+                    SELECT COUNT(*)
+                    FROM realms occupied
+                    WHERE occupied.continent =
+                        continents.continent
+                ) < $2
+                ORDER BY continents.continent
+                LIMIT 1
+            ),
+            free_positions AS (
                 SELECT
-                    (floor(random() * $1) + 1)::INTEGER
-                        AS continent,
-                    (floor(random() * $2) + 1)::INTEGER
-                        AS region,
-                    (floor(random() * $3) + 1)::INTEGER
-                        AS position
-                FROM generate_series(1, 1000)
-            )
-            SELECT
-                candidates.continent,
-                candidates.region,
-                candidates.position
-            FROM candidates
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM realms occupied
-                WHERE occupied.continent = candidates.continent
-                  AND occupied.region = candidates.region
-                  AND occupied.position = candidates.position
-            )
-            ORDER BY random()
-            LIMIT 1
-            """,
-            MAX_CONTINENTS,
-            REGIONS_PER_CONTINENT,
-            POSITIONS_PER_REGION,
-        )
-
-        # Segunda búsqueda: recorrer todo el mapa desde un
-        # punto inicial aleatorio si el mapa está muy ocupado.
-        if not selected:
-            selected = await connection.fetchrow(
-                """
-                WITH seed AS (
-                    SELECT floor(random() * $1)::INTEGER
-                        AS start_index
-                ),
-                candidates AS (
-                    SELECT
-                        (
-                            (seed.start_index + offsets.i) % $1
-                        ) AS world_index,
-                        offsets.i AS search_order
-                    FROM seed
-                    CROSS JOIN generate_series(
-                        0,
-                        $1 - 1
-                    ) AS offsets(i)
-                ),
-                coordinates AS (
-                    SELECT
-                        (
-                            world_index / ($2 * $3)
-                        ) + 1 AS continent,
-
-                        (
-                            (world_index / $3) % $2
-                        ) + 1 AS region,
-
-                        (
-                            world_index % $3
-                        ) + 1 AS position,
-
-                        search_order
-                    FROM candidates
-                )
-                SELECT
-                    coordinates.continent,
-                    coordinates.region,
-                    coordinates.position
-                FROM coordinates
+                    first_available.continent,
+                    territories.territory,
+                    positions.position
+                FROM first_available
+                CROSS JOIN generate_series(
+                    1, $3
+                ) AS territories(territory)
+                CROSS JOIN generate_series(
+                    1, $4
+                ) AS positions(position)
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM realms occupied
                     WHERE occupied.continent =
-                        coordinates.continent
+                        first_available.continent
                       AND occupied.region =
-                        coordinates.region
+                        territories.territory
                       AND occupied.position =
-                        coordinates.position
+                        positions.position
                 )
-                ORDER BY coordinates.search_order
-                LIMIT 1
-                """,
-                TOTAL_WORLD_POSITIONS,
-                REGIONS_PER_CONTINENT,
-                POSITIONS_PER_REGION,
             )
+            SELECT
+                continent,
+                territory,
+                position
+            FROM free_positions
+            ORDER BY random()
+            LIMIT 1
+            """,
+            MAX_CONTINENTS,
+            POSITIONS_PER_CONTINENT,
+            TERRITORIES_PER_CONTINENT,
+            POSITIONS_PER_TERRITORY,
+        )
 
         if not selected:
             raise RuntimeError(
-                "No quedan posiciones disponibles en el mapa."
+                "No quedan posiciones disponibles en el mundo."
             )
 
         coordinates = normalize_coordinates((
             selected["continent"],
-            selected["region"],
+            selected["territory"],
             selected["position"],
         ))
 
@@ -301,9 +266,9 @@ async def get_realm_coordinates(realm_id):
         ))
 
 
-async def get_world_map(continent, region):
-    continent, region, _ = normalize_coordinates(
-        (continent, region, 1)
+async def get_world_map(continent, territory):
+    continent, territory, _ = normalize_coordinates(
+        (continent, territory, 1)
     )
 
     pool = await get_pool()
@@ -323,13 +288,13 @@ async def get_world_map(continent, region):
             ORDER BY position
             """,
             continent,
-            region,
+            territory,
         )
 
 
-async def find_realm_at(continent, region, position):
-    continent, region, position = normalize_coordinates(
-        (continent, region, position)
+async def find_realm_at(continent, territory, position):
+    continent, territory, position = normalize_coordinates(
+        (continent, territory, position)
     )
 
     pool = await get_pool()
@@ -344,6 +309,6 @@ async def find_realm_at(continent, region, position):
               AND position = $3
             """,
             continent,
-            region,
+            territory,
             position,
         )
