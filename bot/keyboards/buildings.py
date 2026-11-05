@@ -47,20 +47,22 @@ def building_detail_keyboard(
     building_type,
     level=0,
     pending=False,
+    can_start=True,
 ):
     rows = []
 
-    if level == 0:
-        action = "⚒ Construir edificio"
-    else:
-        action = "⬆ Mejorar edificio"
+    if can_start:
+        if level == 0:
+            action = "⚒ Construir edificio"
+        else:
+            action = "⬆ Mejorar edificio"
 
-    rows.append([
-        InlineKeyboardButton(
-            text=action,
-            callback_data=f"upgrade:{building_type}",
-        )
-    ])
+        rows.append([
+            InlineKeyboardButton(
+                text=action,
+                callback_data=f"upgrade:{building_type}",
+            )
+        ])
 
     rows.append([
         InlineKeyboardButton(

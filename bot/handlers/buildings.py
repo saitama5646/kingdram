@@ -298,6 +298,15 @@ async def building_detail_handler(callback: CallbackQuery):
             realm_id,
         )
 
+        resources = await connection.fetchrow(
+            """
+            SELECT wood, stone, gold, food
+            FROM resources
+            WHERE realm_id = $1
+            """,
+            realm_id,
+        )
+
     level = building["level"] if building else 0
 
     next_level = (
@@ -331,6 +340,44 @@ async def building_detail_handler(callback: CallbackQuery):
         else "mejora"
     )
 
+    resource_emojis = {
+        "wood": "🪵",
+        "stone": "🪨",
+        "gold": "🪙",
+        "food": "🌾",
+    }
+
+    resource_names = {
+        "wood": "Madera",
+        "stone": "Piedra",
+        "gold": "Oro",
+        "food": "Alimentos",
+    }
+
+    available_lines = []
+    cost_lines = []
+    sufficient = resources is not None
+
+    for resource in ("wood", "stone", "gold", "food"):
+        available = resources[resource] if resources else 0
+        required = cost.get(resource, 0)
+
+        available_lines.append(
+            f"{resource_emojis[resource]} "
+            f"{resource_names[resource]}: "
+            f"<b>{available:,}</b>"
+        )
+
+        if required:
+            cost_lines.append(
+                f"{resource_emojis[resource]} "
+                f"{resource_names[resource]}: "
+                f"<b>{available:,} / {required:,}</b>"
+            )
+
+            if available < required:
+                sufficient = False
+
     lines = [
         f"{info['icon']} <b>{escape(info['name'].upper())}</b>",
         "",
@@ -339,8 +386,17 @@ async def building_detail_handler(callback: CallbackQuery):
         f"Nivel actual: <b>{level}</b>",
         f"Nivel objetivo: <b>{next_level}</b>",
         "",
+        "💰 <b>RECURSOS DISPONIBLES</b>",
+        *available_lines,
+        "",
         f"<b>Coste de {action}</b>",
-        format_cost(cost),
+        *cost_lines,
+        "",
+        (
+            "✅ <b>Recursos suficientes</b>"
+            if sufficient
+            else "❌ <b>Recursos insuficientes</b>"
+        ),
         "",
         f"⏱ Tiempo base: <b>{format_duration(base_duration)}</b>",
         (
@@ -398,6 +454,7 @@ async def building_detail_handler(callback: CallbackQuery):
             building_type=building_type,
             level=level,
             pending=False,
+            can_start=sufficient,
         ),
     )
 

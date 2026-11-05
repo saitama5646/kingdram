@@ -341,6 +341,15 @@ async def research_detail_handler(callback: CallbackQuery):
             realm_id,
         )
 
+        resources = await connection.fetchrow(
+            """
+            SELECT wood, stone, gold, food
+            FROM resources
+            WHERE realm_id = $1
+            """,
+            realm_id,
+        )
+
     projected = get_projected_levels(
         levels,
         queue,
@@ -400,6 +409,44 @@ async def research_detail_handler(callback: CallbackQuery):
         research["effects"]
     )
 
+    resource_emojis = {
+        "wood": "🪵",
+        "stone": "🪨",
+        "gold": "🪙",
+        "food": "🌾",
+    }
+
+    resource_names = {
+        "wood": "Madera",
+        "stone": "Piedra",
+        "gold": "Oro",
+        "food": "Alimentos",
+    }
+
+    available_lines = []
+    cost_lines = []
+    sufficient = resources is not None
+
+    for resource in ("wood", "stone", "gold", "food"):
+        available = resources[resource] if resources else 0
+        required = cost.get(resource, 0)
+
+        available_lines.append(
+            f"{resource_emojis[resource]} "
+            f"{resource_names[resource]}: "
+            f"<b>{available:,}</b>"
+        )
+
+        if required:
+            cost_lines.append(
+                f"{resource_emojis[resource]} "
+                f"{resource_names[resource]}: "
+                f"<b>{available:,} / {required:,}</b>"
+            )
+
+            if available < required:
+                sufficient = False
+
     lines = [
         f"{research['icon']} "
         f"<b>{escape(research['name'].upper())}</b>",
@@ -410,8 +457,17 @@ async def research_detail_handler(callback: CallbackQuery):
         f"Nivel actual: <b>{current_level}</b>",
         f"Próximo nivel: <b>{target_level}</b>",
         "",
+        "💰 <b>RECURSOS DISPONIBLES</b>",
+        *available_lines,
+        "",
         "<b>Coste de investigación</b>",
-        format_cost(cost),
+        *cost_lines,
+        "",
+        (
+            "✅ <b>Recursos suficientes</b>"
+            if sufficient
+            else "❌ <b>Recursos insuficientes</b>"
+        ),
         "",
         f"⏱ Duración: <b>{duration // 60} min "
         f"{duration % 60} s</b>",
@@ -461,7 +517,7 @@ async def research_detail_handler(callback: CallbackQuery):
             *missing,
         ])
 
-    can_start = not missing
+    can_start = not missing and sufficient
 
     await callback.answer()
 
