@@ -18,7 +18,7 @@ from bot.handlers.economy import render_economy
 from bot.handlers.research import render_research
 from bot.handlers.territory import render_territories
 from bot.handlers.ranking import ranking_handler
-from bot.handlers.battle import battle_menu
+from bot.handlers.battle import war_menu as battle_menu
 
 from bot.services.construction import BUILDINGS
 from bot.services.military import UNITS
