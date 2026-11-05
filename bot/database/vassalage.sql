@@ -72,3 +72,43 @@ CREATE TABLE IF NOT EXISTS vassalage_tribute_log (
 
 CREATE INDEX IF NOT EXISTS idx_vassalage_tribute_history
 ON vassalage_tribute_log(lord_realm_id, recorded_at DESC);
+
+
+-- ---------------------------------------------------------
+-- TRIBUTO FEUDAL
+-- ---------------------------------------------------------
+
+ALTER TABLE vassalage_relations
+ADD COLUMN IF NOT EXISTS tribute_rate NUMERIC(5,4)
+NOT NULL DEFAULT 0.20;
+
+ALTER TABLE vassalage_relations
+ADD CONSTRAINT chk_vassalage_tribute_rate
+CHECK (
+    tribute_rate >= 0
+    AND tribute_rate <= 1
+);
+
+-- Relacionar cada registro de tributo con su vasallaje.
+ALTER TABLE vassalage_tribute_log
+ADD COLUMN IF NOT EXISTS relation_id BIGINT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_vassalage_tribute_relation'
+          AND conrelid = 'vassalage_tribute_log'::regclass
+    ) THEN
+        ALTER TABLE vassalage_tribute_log
+        ADD CONSTRAINT fk_vassalage_tribute_relation
+        FOREIGN KEY (relation_id)
+        REFERENCES vassalage_relations(id)
+        ON DELETE SET NULL;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS
+idx_vassalage_tribute_relation
+ON vassalage_tribute_log(relation_id, recorded_at DESC);
