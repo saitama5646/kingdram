@@ -19,6 +19,7 @@ from bot.handlers.research import render_research
 from bot.handlers.territory import render_territories
 from bot.handlers.ranking import ranking_handler
 from bot.handlers.battle import war_menu as battle_menu
+from bot.handlers.diplomacy import render_diplomacy
 
 from bot.services.construction import BUILDINGS
 from bot.services.military import UNITS
@@ -397,19 +398,6 @@ async def show_main_menu_message(message: Message):
     )
 
 
-async def show_diplomacy(context):
-    await context.message.edit_text(
-        "👑 <b>DIPLOMACIA REAL</b>\n\n"
-        "Aquí se administrarán las relaciones entre reinos, "
-        "las alianzas y los acuerdos diplomáticos.\n\n"
-        "⚒ <b>Estado:</b> sistema diplomático pendiente "
-        "de integración.\n\n"
-        "Los apartados que todavía no están implementados "
-        "no realizarán acciones ficticias.",
-        reply_markup=back_to_menu_keyboard(),
-    )
-
-
 async def open_screen(context, destination):
     if destination == "kingdom":
         await show_kingdom(context)
@@ -436,7 +424,7 @@ async def open_screen(context, destination):
         await ranking_handler(context)
 
     elif destination == "diplomacy":
-        await show_diplomacy(context)
+        await render_diplomacy(context)
 
 
 @router.callback_query(F.data == "main_menu")
@@ -450,22 +438,6 @@ async def main_menu_handler(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=main_menu_keyboard(),
-    )
-
-
-@router.callback_query(F.data == "diplomacy")
-async def diplomacy_handler(callback: CallbackQuery):
-    await callback.answer()
-
-    await callback.message.edit_text(
-        "👑 <b>DIPLOMACIA REAL</b>\n\n"
-        "Aquí se administrarán las relaciones entre reinos, "
-        "las alianzas y los acuerdos diplomáticos.\n\n"
-        "⚒ <b>Estado:</b> sistema diplomático pendiente "
-        "de integración.\n\n"
-        "Los apartados que todavía no están implementados "
-        "no realizarán acciones ficticias.",
-        reply_markup=back_to_menu_keyboard(),
     )
 
 
