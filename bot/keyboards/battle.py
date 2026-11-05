@@ -10,6 +10,36 @@ UNIT_ORDER = (
 "royal_guard",
 )
 
+def war_menu_keyboard():
+return InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="⚔ Campañas militares",
+callback_data="battle:campaigns",
+)
+],
+[
+InlineKeyboardButton(
+text="🚩 Expediciones activas",
+callback_data="missions",
+)
+],
+[
+InlineKeyboardButton(
+text="📜 Resultados de batallas",
+callback_data="battle:history",
+)
+],
+[
+InlineKeyboardButton(
+text="↩ Menú principal",
+callback_data="main_menu",
+)
+],
+]
+)
+
 def battle_targets_keyboard(targets):
 rows = []
 
@@ -33,7 +63,19 @@ rows.extend([
     ],
     [
         InlineKeyboardButton(
-            text="↩ Menú principal",
+            text="📜 Resultados anteriores",
+            callback_data="battle:history",
+        )
+    ],
+    [
+        InlineKeyboardButton(
+            text="↩ Menú de Guerra",
+            callback_data="battle",
+        )
+    ],
+    [
+        InlineKeyboardButton(
+            text="⌂ Menú principal",
             callback_data="main_menu",
         )
     ],
@@ -55,7 +97,7 @@ callback_data=f"battle:prepare:{realm_id}",
 [
 InlineKeyboardButton(
 text="↩ Cancelar",
-callback_data="battle",
+callback_data="battle:campaigns",
 )
 ],
 [
@@ -74,12 +116,17 @@ available,
 rows = []
 
 for unit_type in UNIT_ORDER:
-    quantity = int(quantities.get(unit_type, 0))
-    maximum = int(available.get(unit_type, 0))
+    quantity = int(
+        quantities.get(unit_type, 0)
+    )
+
+    maximum = int(
+        available.get(unit_type, 0)
+    )
 
     rows.append([
         InlineKeyboardButton(
-            text=f"➖ 1",
+            text="➖ 1",
             callback_data=(
                 f"troops:change:{unit_type}:-1"
             ),
@@ -89,13 +136,13 @@ for unit_type in UNIT_ORDER:
             callback_data="troops:noop",
         ),
         InlineKeyboardButton(
-            text=f"➕ 1",
+            text="➕ 1",
             callback_data=(
                 f"troops:change:{unit_type}:1"
             ),
         ),
         InlineKeyboardButton(
-            text=f"➕ 5",
+            text="➕ 5",
             callback_data=(
                 f"troops:change:{unit_type}:5"
             ),
@@ -154,7 +201,7 @@ inline_keyboard=[
 [
 InlineKeyboardButton(
 text="⚔ Buscar otro objetivo",
-callback_data="battle",
+callback_data="battle:campaigns",
 )
 ],
 [
@@ -165,8 +212,14 @@ callback_data="missions",
 ],
 [
 InlineKeyboardButton(
-text="🏰 Mi ejército",
-callback_data="army",
+text="📜 Resultados anteriores",
+callback_data="battle:history",
+)
+],
+[
+InlineKeyboardButton(
+text="⚔ Menú de Guerra",
+callback_data="battle",
 )
 ],
 [
@@ -201,7 +254,7 @@ rows.extend([
     ],
     [
         InlineKeyboardButton(
-            text="⚔ Campañas militares",
+            text="⚔ Menú de Guerra",
             callback_data="battle",
         )
     ],
@@ -215,4 +268,104 @@ rows.extend([
 
 return InlineKeyboardMarkup(
     inline_keyboard=rows,
+)
+
+def battle_history_keyboard(
+reports,
+offset,
+total,
+):
+rows = []
+
+for report in reports:
+    attacker_won = (
+        report["winner_realm_id"]
+        == report["attacker_realm_id"]
+    )
+
+    result_icon = (
+        "🏆"
+        if attacker_won
+        else "🛡"
+    )
+
+    rows.append([
+        InlineKeyboardButton(
+            text=(
+                f"{result_icon} #{report['id']} "
+                f"{report['attacker_name']} "
+                f"vs {report['defender_name']}"
+            ),
+            callback_data=(
+                f"battle:report:{report['id']}"
+            ),
+        )
+    ])
+
+navigation = []
+
+if offset > 0:
+    navigation.append(
+        InlineKeyboardButton(
+            text="⬅ Anterior",
+            callback_data=(
+                f"battle:history:{max(0, offset - 10)}"
+            ),
+        )
+    )
+
+if offset + 10 < total:
+    navigation.append(
+        InlineKeyboardButton(
+            text="Siguiente ➡",
+            callback_data=(
+                f"battle:history:{offset + 10}"
+            ),
+        )
+    )
+
+if navigation:
+    rows.append(navigation)
+
+rows.extend([
+    [
+        InlineKeyboardButton(
+            text="⚔ Menú de Guerra",
+            callback_data="battle",
+        )
+    ],
+    [
+        InlineKeyboardButton(
+            text="⌂ Menú principal",
+            callback_data="main_menu",
+        )
+    ],
+])
+
+return InlineKeyboardMarkup(
+    inline_keyboard=rows,
+)
+
+def battle_report_keyboard(battle_id):
+return InlineKeyboardMarkup(
+inline_keyboard=[
+[
+InlineKeyboardButton(
+text="⬅ Historial",
+callback_data="battle:history",
+)
+],
+[
+InlineKeyboardButton(
+text="⚔ Menú de Guerra",
+callback_data="battle",
+)
+],
+[
+InlineKeyboardButton(
+text="⌂ Menú principal",
+callback_data="main_menu",
+)
+],
+]
 )
