@@ -5,12 +5,16 @@ POSITIONS_PER_REGION = 50
 REGIONS_PER_CONTINENT = 20
 MAX_CONTINENTS = 100
 
-# Mapa medieval de gran escala.
+TOTAL_WORLD_POSITIONS = (
+    MAX_CONTINENTS
+    * REGIONS_PER_CONTINENT
+    * POSITIONS_PER_REGION
+)
+
 CONTINENT_DISTANCE = 50000
 REGION_DISTANCE = 250
 POSITION_DISTANCE = 5
 
-# El desplazamiento ahora requiere más tiempo.
 BASE_TRAVEL_SECONDS = 60
 TRAVEL_TIME_FACTOR = 20
 
@@ -85,9 +89,6 @@ def calculate_travel_time(
 
 
 def calculate_mission_speed(troops):
-    """
-    La velocidad de la expedición es la de su unidad más lenta.
-    """
     from bot.services.military import UNITS
 
     speeds = []
@@ -144,51 +145,126 @@ async def assign_world_position(connection, realm_id):
                 realm["position"],
             ))
 
-        for continent in range(1, MAX_CONTINENTS + 1):
-            for region in range(1, REGIONS_PER_CONTINENT + 1):
-                occupied = await connection.fetch(
-                    """
-                    SELECT position
-                    FROM realms
-                    WHERE continent = $1
-                      AND region = $2
-                      AND position IS NOT NULL
-                    """,
-                    continent,
-                    region,
-                )
-
-                occupied_positions = {
-                    row["position"]
-                    for row in occupied
-                }
-
-                for position in range(
-                    1,
-                    POSITIONS_PER_REGION + 1,
-                ):
-                    if position in occupied_positions:
-                        continue
-
-                    await connection.execute(
-                        """
-                        UPDATE realms
-                        SET continent = $1,
-                            region = $2,
-                            position = $3
-                        WHERE id = $4
-                        """,
-                        continent,
-                        region,
-                        position,
-                        realm_id,
-                    )
-
-                    return continent, region, position
-
-        raise RuntimeError(
-            "No quedan posiciones disponibles en el mapa."
+        # Primera búsqueda: probar 1.000 coordenadas aleatorias.
+        selected = await connection.fetchrow(
+            """
+            WITH candidates AS (
+                SELECT
+                    (floor(random() * $1) + 1)::INTEGER
+                        AS continent,
+                    (floor(random() * $2) + 1)::INTEGER
+                        AS region,
+                    (floor(random() * $3) + 1)::INTEGER
+                        AS position
+                FROM generate_series(1, 1000)
+            )
+            SELECT
+                candidates.continent,
+                candidates.region,
+                candidates.position
+            FROM candidates
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM realms occupied
+                WHERE occupied.continent = candidates.continent
+                  AND occupied.region = candidates.region
+                  AND occupied.position = candidates.position
+            )
+            ORDER BY random()
+            LIMIT 1
+            """,
+            MAX_CONTINENTS,
+            REGIONS_PER_CONTINENT,
+            POSITIONS_PER_REGION,
         )
+
+        # Segunda búsqueda: recorrer todo el mapa desde un
+        # punto inicial aleatorio si el mapa está muy ocupado.
+        if not selected:
+            selected = await connection.fetchrow(
+                """
+                WITH seed AS (
+                    SELECT floor(random() * $1)::INTEGER
+                        AS start_index
+                ),
+                candidates AS (
+                    SELECT
+                        (
+                            (seed.start_index + offsets.i) % $1
+                        ) AS world_index,
+                        offsets.i AS search_order
+                    FROM seed
+                    CROSS JOIN generate_series(
+                        0,
+                        $1 - 1
+                    ) AS offsets(i)
+                ),
+                coordinates AS (
+                    SELECT
+                        (
+                            world_index / ($2 * $3)
+                        ) + 1 AS continent,
+
+                        (
+                            (world_index / $3) % $2
+                        ) + 1 AS region,
+
+                        (
+                            world_index % $3
+                        ) + 1 AS position,
+
+                        search_order
+                    FROM candidates
+                )
+                SELECT
+                    coordinates.continent,
+                    coordinates.region,
+                    coordinates.position
+                FROM coordinates
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM realms occupied
+                    WHERE occupied.continent =
+                        coordinates.continent
+                      AND occupied.region =
+                        coordinates.region
+                      AND occupied.position =
+                        coordinates.position
+                )
+                ORDER BY coordinates.search_order
+                LIMIT 1
+                """,
+                TOTAL_WORLD_POSITIONS,
+                REGIONS_PER_CONTINENT,
+                POSITIONS_PER_REGION,
+            )
+
+        if not selected:
+            raise RuntimeError(
+                "No quedan posiciones disponibles en el mapa."
+            )
+
+        coordinates = normalize_coordinates((
+            selected["continent"],
+            selected["region"],
+            selected["position"],
+        ))
+
+        await connection.execute(
+            """
+            UPDATE realms
+            SET continent = $1,
+                region = $2,
+                position = $3
+            WHERE id = $4
+            """,
+            coordinates[0],
+            coordinates[1],
+            coordinates[2],
+            realm_id,
+        )
+
+        return coordinates
 
     finally:
         await connection.execute(
@@ -210,6 +286,12 @@ async def get_realm_coordinates(realm_id):
         )
 
         if not row:
+            return None
+
+        if any(
+            row[key] is None
+            for key in ("continent", "region", "position")
+        ):
             return None
 
         return normalize_coordinates((
