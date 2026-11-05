@@ -45,3 +45,18 @@ WHERE NOT EXISTS (
       AND am.player_id = a.leader_id
 )
 ON CONFLICT DO NOTHING;
+
+
+CREATE TABLE IF NOT EXISTS alliance_events (
+    id BIGSERIAL PRIMARY KEY,
+    alliance_id BIGINT NOT NULL
+        REFERENCES alliances(id) ON DELETE CASCADE,
+    actor_id BIGINT
+        REFERENCES players(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kingdram_alliance_events
+ON alliance_events(alliance_id, created_at DESC);

@@ -1,8 +1,10 @@
 from html import escape
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from bot.database.connection import get_pool
 from bot.services.vassalage import (
@@ -12,6 +14,11 @@ from bot.services.vassalage import (
 
 
 router = Router()
+
+
+class AllianceCreation(StatesGroup):
+    waiting_name = State()
+
 
 
 def diplomacy_keyboard(data):
@@ -41,6 +48,19 @@ def diplomacy_keyboard(data):
         builder.button(
             text=f"✕ Rechazar invitación #{invitation_id}",
             callback_data=f"diplomacy:alliance:reject:{invitation_id}",
+        )
+
+    alliance = data.get("alliance")
+
+    if alliance:
+        builder.button(
+            text="⚙️ Administrar alianza",
+            callback_data="alliance:manage",
+        )
+    else:
+        builder.button(
+            text="🏰 Fundar alianza",
+            callback_data="alliance:create",
         )
 
     builder.button(
@@ -132,6 +152,7 @@ async def render_diplomacy(
         return
 
     data["alliance_invitations"] = alliance_invitations
+    data["alliance"] = alliance
 
     lines = [
         "👑 <b>DIPLOMACIA REAL</b>",
@@ -155,6 +176,25 @@ async def render_diplomacy(
             f"Tu posición: <b>{role}</b>",
             f"Integrantes registrados: <b>{alliance['member_count']}</b>",
         ])
+
+        members = await connection.fetch(
+            """
+            SELECT p.id, p.display_name
+            FROM alliance_members am
+            JOIN players p ON p.id = am.player_id
+            WHERE am.alliance_id = $1
+            ORDER BY CASE WHEN p.id = $2 THEN 0 ELSE 1 END, am.joined_at
+            """,
+            alliance["id"],
+            alliance["leader_id"],
+        )
+
+        lines.append("")
+        lines.append("<b>Integrantes:</b>")
+
+        for member in members:
+            label = " (Líder)" if member["id"] == alliance["leader_id"] else ""
+            lines.append(f"• {escape(member['display_name'])}{label}")
     else:
         lines.append(
             "<i>No perteneces a ninguna alianza.</i>"
@@ -323,6 +363,459 @@ async def vassalage_decision_handler(
             callback,
             answer=False,
         )
+
+
+
+@router.callback_query(F.data == "alliance:create")
+async def alliance_create_start(callback: CallbackQuery, state: FSMContext):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        realm = await connection.fetchrow(
+            "SELECT id FROM realms WHERE owner_id = $1",
+            callback.from_user.id,
+        )
+        membership = await connection.fetchrow(
+            "SELECT player_id FROM alliance_members WHERE player_id = $1",
+            callback.from_user.id,
+        )
+
+    if not realm:
+        await callback.answer("Primero funda un reino.", show_alert=True)
+        return
+
+    if membership:
+        await callback.answer("Ya perteneces a una alianza.", show_alert=True)
+        return
+
+    await state.set_state(AllianceCreation.waiting_name)
+    await callback.answer()
+    await callback.message.answer(
+        "Escribe el nombre de tu alianza (3–30 caracteres)."
+    )
+
+
+@router.message(AllianceCreation.waiting_name)
+async def alliance_create_finish(message: Message, state: FSMContext):
+    name = (message.text or "").strip()
+
+    if not 3 <= len(name) <= 30:
+        await message.answer("El nombre debe tener entre 3 y 30 caracteres.")
+        return
+
+    pool = await get_pool()
+
+    try:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                member = await connection.fetchrow(
+                    """
+                    SELECT player_id
+                    FROM alliance_members
+                    WHERE player_id = $1
+                    FOR UPDATE
+                    """,
+                    message.from_user.id,
+                )
+
+                if member:
+                    await state.clear()
+                    await message.answer("Ya perteneces a una alianza.")
+                    return
+
+                alliance = await connection.fetchrow(
+                    """
+                    INSERT INTO alliances (name, leader_id)
+                    VALUES ($1, $2)
+                    RETURNING id
+                    """,
+                    name,
+                    message.from_user.id,
+                )
+
+                await connection.execute(
+                    """
+                    INSERT INTO alliance_members (alliance_id, player_id)
+                    VALUES ($1, $2)
+                    """,
+                    alliance["id"],
+                    message.from_user.id,
+                )
+
+                await connection.execute(
+                    """
+                    INSERT INTO alliance_events
+                        (alliance_id, actor_id, event_type, details)
+                    VALUES ($1, $2, 'created', $3)
+                    """,
+                    alliance["id"],
+                    message.from_user.id,
+                    name,
+                )
+
+    except Exception as exc:
+        if "unique" in str(exc).lower():
+            await message.answer(
+                "El nombre está ocupado o ya perteneces a una alianza."
+            )
+            return
+        raise
+
+    await state.clear()
+    await message.answer(
+        "Alianza fundada correctamente. Abre Diplomacia para administrarla."
+    )
+
+
+@router.callback_query(F.data == "alliance:manage")
+async def alliance_manage(callback: CallbackQuery):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        alliance = await connection.fetchrow(
+            """
+            SELECT a.id, a.name, a.leader_id
+            FROM alliances a
+            JOIN alliance_members am ON am.alliance_id = a.id
+            WHERE am.player_id = $1
+            """,
+            callback.from_user.id,
+        )
+
+        if not alliance:
+            await callback.answer(
+                "No perteneces a una alianza.",
+                show_alert=True,
+            )
+            return
+
+        members = await connection.fetch(
+            """
+            SELECT p.id, p.display_name
+            FROM alliance_members am
+            JOIN players p ON p.id = am.player_id
+            WHERE am.alliance_id = $1
+            ORDER BY CASE WHEN p.id = $2 THEN 0 ELSE 1 END, am.joined_at
+            """,
+            alliance["id"],
+            alliance["leader_id"],
+        )
+
+        invites = await connection.fetch(
+            """
+            SELECT p.id, p.display_name
+            FROM players p
+            JOIN realms r ON r.owner_id = p.id
+            WHERE p.id <> $1
+              AND NOT EXISTS (
+                  SELECT 1 FROM alliance_members am
+                  WHERE am.player_id = p.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM alliance_invitations i
+                  WHERE i.alliance_id = $2
+                    AND i.player_id = p.id
+                    AND i.status = 'pending'
+              )
+            ORDER BY p.display_name
+            LIMIT 20
+            """,
+            callback.from_user.id,
+            alliance["id"],
+        )
+
+    builder = InlineKeyboardBuilder()
+
+    if callback.from_user.id == alliance["leader_id"]:
+        for player in invites:
+            builder.button(
+                text=f"➕ Invitar {player['display_name']}",
+                callback_data=f"alliance:invite:{player['id']}",
+            )
+
+        for member in members:
+            if member["id"] != alliance["leader_id"]:
+                builder.button(
+                    text=f"🚪 Expulsar {member['display_name']}",
+                    callback_data=f"alliance:kick:{member['id']}",
+                )
+                builder.button(
+                    text=f"👑 Ceder liderazgo a {member['display_name']}",
+                    callback_data=f"alliance:transfer:{member['id']}",
+                )
+
+        builder.button(
+            text="🗑 Disolver alianza",
+            callback_data="alliance:dissolve",
+        )
+    else:
+        builder.button(
+            text="🚶 Abandonar alianza",
+            callback_data="alliance:leave",
+        )
+
+    builder.button(text="↩ Diplomacia", callback_data="diplomacy")
+    builder.adjust(1)
+
+    await callback.answer()
+    await callback.message.edit_text(
+        f"⚙️ <b>ADMINISTRACIÓN DE ALIANZA</b>\n\n"
+        f"🏰 {escape(alliance['name'])}\n"
+        f"👥 Miembros: {len(members)}\n\n"
+        "Selecciona una acción:",
+        reply_markup=builder.as_markup(),
+    )
+
+
+async def alliance_member_action(
+    callback: CallbackQuery,
+    target_id: int,
+    action: str,
+):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            alliance = await connection.fetchrow(
+                """
+                SELECT a.id, a.leader_id
+                FROM alliances a
+                JOIN alliance_members am ON am.alliance_id = a.id
+                WHERE am.player_id = $1
+                FOR UPDATE OF a
+                """,
+                callback.from_user.id,
+            )
+
+            if not alliance:
+                return False, "No perteneces a una alianza."
+
+            if action in {"kick", "transfer"}:
+                if alliance["leader_id"] != callback.from_user.id:
+                    return False, "Solo el líder puede realizar esa acción."
+
+            if action != "leave" and target_id == callback.from_user.id:
+                return False, "No puedes realizar esa acción sobre ti mismo."
+
+            target = await connection.fetchrow(
+                """
+                SELECT player_id
+                FROM alliance_members
+                WHERE alliance_id = $1 AND player_id = $2
+                FOR UPDATE
+                """,
+                alliance["id"],
+                target_id,
+            )
+
+            if not target:
+                return False, "Ese jugador no pertenece a tu alianza."
+
+            if action == "kick":
+                await connection.execute(
+                    """
+                    DELETE FROM alliance_members
+                    WHERE alliance_id = $1 AND player_id = $2
+                    """,
+                    alliance["id"],
+                    target_id,
+                )
+                event = "member_kicked"
+
+            elif action == "transfer":
+                await connection.execute(
+                    """
+                    UPDATE alliances
+                    SET leader_id = $1
+                    WHERE id = $2
+                    """,
+                    target_id,
+                    alliance["id"],
+                )
+                event = "leadership_transferred"
+
+            else:
+                await connection.execute(
+                    """
+                    DELETE FROM alliance_members
+                    WHERE alliance_id = $1 AND player_id = $2
+                    """,
+                    alliance["id"],
+                    callback.from_user.id,
+                )
+                event = "member_left"
+
+            await connection.execute(
+                """
+                INSERT INTO alliance_events
+                    (alliance_id, actor_id, event_type, details)
+                VALUES ($1, $2, $3, $4)
+                """,
+                alliance["id"],
+                callback.from_user.id,
+                event,
+                str(target_id),
+            )
+
+    messages = {
+        "kick": "Jugador expulsado.",
+        "transfer": "Liderazgo transferido.",
+        "leave": "Has abandonado la alianza.",
+    }
+
+    return True, messages[action]
+
+
+@router.callback_query(F.data.startswith("alliance:invite:"))
+async def alliance_invite_player(callback: CallbackQuery):
+    try:
+        target_id = int(callback.data.split(":")[2])
+    except (ValueError, IndexError):
+        await callback.answer("Jugador inválido.", show_alert=True)
+        return
+
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            alliance = await connection.fetchrow(
+                """
+                SELECT a.id
+                FROM alliances a
+                JOIN alliance_members am ON am.alliance_id = a.id
+                WHERE a.leader_id = $1 AND am.player_id = $1
+                FOR UPDATE OF a
+                """,
+                callback.from_user.id,
+            )
+
+            if not alliance:
+                await callback.answer(
+                    "Solo el líder puede invitar.",
+                    show_alert=True,
+                )
+                return
+
+            realm = await connection.fetchrow(
+                "SELECT id FROM realms WHERE owner_id = $1",
+                target_id,
+            )
+
+            member = await connection.fetchrow(
+                "SELECT player_id FROM alliance_members WHERE player_id = $1",
+                target_id,
+            )
+
+            if not realm or member or target_id == callback.from_user.id:
+                await callback.answer(
+                    "Jugador no disponible para invitación.",
+                    show_alert=True,
+                )
+                return
+
+            await connection.execute(
+                """
+                INSERT INTO alliance_invitations
+                    (alliance_id, player_id, invited_by)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (alliance_id, player_id)
+                    WHERE status = 'pending'
+                DO NOTHING
+                """,
+                alliance["id"],
+                target_id,
+                callback.from_user.id,
+            )
+
+            await connection.execute(
+                """
+                INSERT INTO alliance_events
+                    (alliance_id, actor_id, event_type, details)
+                VALUES ($1, $2, 'invitation_sent', $3)
+                """,
+                alliance["id"],
+                callback.from_user.id,
+                str(target_id),
+            )
+
+    await callback.answer("Invitación enviada.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("alliance:kick:"))
+async def alliance_kick(callback: CallbackQuery):
+    try:
+        target = int(callback.data.split(":")[2])
+    except (ValueError, IndexError):
+        await callback.answer("Jugador inválido.", show_alert=True)
+        return
+
+    ok, message = await alliance_member_action(callback, target, "kick")
+    await callback.answer(message, show_alert=not ok)
+
+    if ok:
+        await alliance_manage(callback)
+
+
+@router.callback_query(F.data.startswith("alliance:transfer:"))
+async def alliance_transfer(callback: CallbackQuery):
+    try:
+        target = int(callback.data.split(":")[2])
+    except (ValueError, IndexError):
+        await callback.answer("Jugador inválido.", show_alert=True)
+        return
+
+    ok, message = await alliance_member_action(callback, target, "transfer")
+    await callback.answer(message, show_alert=not ok)
+
+    if ok:
+        await alliance_manage(callback)
+
+
+@router.callback_query(F.data == "alliance:leave")
+async def alliance_leave(callback: CallbackQuery):
+    ok, message = await alliance_member_action(
+        callback,
+        callback.from_user.id,
+        "leave",
+    )
+
+    await callback.answer(message, show_alert=not ok)
+
+    if ok:
+        await render_diplomacy(callback, answer=False)
+
+
+@router.callback_query(F.data == "alliance:dissolve")
+async def alliance_dissolve(callback: CallbackQuery):
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            alliance = await connection.fetchrow(
+                """
+                SELECT a.id
+                FROM alliances a
+                JOIN alliance_members am ON am.alliance_id = a.id
+                WHERE a.leader_id = $1 AND am.player_id = $1
+                FOR UPDATE OF a
+                """,
+                callback.from_user.id,
+            )
+
+            if not alliance:
+                await callback.answer(
+                    "Solo el líder puede disolver la alianza.",
+                    show_alert=True,
+                )
+                return
+
+            await connection.execute(
+                "DELETE FROM alliances WHERE id = $1",
+                alliance["id"],
+            )
+
+    await callback.answer("Alianza disuelta.", show_alert=True)
+    await render_diplomacy(callback, answer=False)
 
 
 @router.callback_query(
