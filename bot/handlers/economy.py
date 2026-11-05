@@ -1,32 +1,33 @@
-
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 
 from bot.database.connection import get_pool
 from bot.services.construction import BUILDINGS, get_production
+from bot.services.storage import get_storage_capacity
 from bot.keyboards.economy import economy_keyboard
 from bot.keyboards.main_menu import create_realm_keyboard
 
 
 router = Router()
 
+
 RESOURCE_INFO = {
     "wood": {
         "name": "Madera",
-        "icon": "🪵"
+        "icon": "🪵",
     },
     "stone": {
         "name": "Piedra",
-        "icon": "🪨"
+        "icon": "🪨",
     },
     "gold": {
         "name": "Oro",
-        "icon": "🪙"
+        "icon": "🪙",
     },
     "food": {
         "name": "Alimentos",
-        "icon": "🌾"
-    }
+        "icon": "🌾",
+    },
 }
 
 
@@ -39,7 +40,7 @@ def calculate_production(buildings):
         "wood": 0,
         "stone": 0,
         "gold": 0,
-        "food": 0
+        "food": 0,
     }
 
     for building in buildings:
@@ -55,7 +56,7 @@ def calculate_production(buildings):
 
         production[resource] += get_production(
             building_type,
-            building["level"]
+            building["level"],
         )
 
     return production
@@ -76,23 +77,24 @@ async def render_economy(callback):
                 p.food,
                 p.updated_at
             FROM realms r
-            JOIN resources p ON p.realm_id = r.id
+            JOIN resources p
+              ON p.realm_id = r.id
             WHERE r.owner_id = $1
             """,
-            callback.from_user.id
+            callback.from_user.id,
         )
 
         if not realm:
             await callback.answer(
                 "Primero debes fundar tu reino.",
-                show_alert=True
+                show_alert=True,
             )
 
             await callback.message.edit_text(
                 "🏰 <b>Aún no posees un reino.</b>\n\n"
                 "Funda tu primer dominio para comenzar "
                 "a desarrollar su economía.",
-                reply_markup=create_realm_keyboard()
+                reply_markup=create_realm_keyboard(),
             )
             return
 
@@ -102,31 +104,58 @@ async def render_economy(callback):
             FROM buildings
             WHERE realm_id = $1
             """,
-            realm["id"]
+            realm["id"],
         )
 
     production = calculate_production(buildings)
+    capacity = get_storage_capacity(buildings)
+
+    levels = {
+        item["building_type"]: item["level"]
+        for item in buildings
+    }
+
+    warehouse_level = levels.get("warehouse", 0)
+    granary_level = levels.get("granary", 0)
 
     lines = [
         "📦 <b>ECONOMÍA DEL REINO</b>",
         "",
         f"🏰 Dominio: <b>{realm['name']}</b>",
         "",
-        "<b>RECURSOS DISPONIBLES</b>"
+        "━━━━━━━━━━━━━━━━━━",
+        "📊 <b>RECURSOS DISPONIBLES</b>",
+        "",
     ]
 
     for resource, info in RESOURCE_INFO.items():
         amount = realm[resource]
+        limit = capacity[resource]
+
+        percentage = (
+            amount / limit * 100
+            if limit > 0
+            else 0
+        )
 
         lines.append(
-            f"{info['icon']} {info['name']}: "
-            f"<b>{format_number(amount)}</b>"
+            f"{info['icon']} <b>{info['name']}</b>"
+        )
+
+        lines.append(
+            f"   {format_number(amount)} / "
+            f"{format_number(limit)}"
+        )
+
+        lines.append(
+            f"   Almacenamiento: {percentage:.1f}%"
         )
 
     lines.extend([
         "",
-        "📈 <b>PRODUCCIÓN</b>",
-        "<i>Rendimiento según los edificios actuales.</i>"
+        "━━━━━━━━━━━━━━━━━━",
+        "📈 <b>PRODUCCIÓN POR HORA</b>",
+        "",
     ])
 
     for resource, info in RESOURCE_INFO.items():
@@ -144,7 +173,18 @@ async def render_economy(callback):
 
     lines.extend([
         "",
-        "🏗 <b>INFRAESTRUCTURA PRODUCTIVA</b>"
+        "━━━━━━━━━━━━━━━━━━",
+        "🏗 <b>CAPACIDAD DE ALMACENAMIENTO</b>",
+        "",
+        f"🏚️ Almacén: nivel <b>{warehouse_level}</b>",
+        f"🌾 Granero: nivel <b>{granary_level}</b>",
+        "",
+        "<i>El Almacén aumenta los límites de madera, "
+        "piedra y oro. El Granero aumenta el límite "
+        "de alimentos.</i>",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "🏭 <b>INFRAESTRUCTURA PRODUCTIVA</b>",
     ])
 
     productive_buildings = 0
@@ -170,25 +210,28 @@ async def render_economy(callback):
         )
 
     if productive_buildings == 0:
-        lines.append("<i>No hay edificios productivos.</i>")
+        lines.append(
+            "<i>No hay edificios productivos.</i>"
+        )
 
     lines.extend([
         "",
-        "<i>Las tasas se calculan por hora a partir "
-        "de la producción actual de tus edificios.</i>",
-        "",
-        "<i>El consumo y los límites de almacenamiento "
-        "se incorporarán cuando estén implementados.</i>"
+        "<i>La producción se procesa automáticamente "
+        "cada minuto. Los recursos no superarán "
+        "la capacidad de almacenamiento.</i>",
     ])
 
     await callback.answer()
 
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=economy_keyboard()
+        reply_markup=economy_keyboard(),
+        parse_mode="HTML",
     )
 
 
-@router.callback_query(F.data.in_({"economy", "economy_refresh"}))
+@router.callback_query(
+    F.data.in_({"economy", "economy_refresh"})
+)
 async def economy_handler(callback: CallbackQuery):
     await render_economy(callback)

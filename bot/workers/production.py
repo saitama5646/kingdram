@@ -1,10 +1,15 @@
 import asyncio
 import logging
+
 from decimal import Decimal, ROUND_FLOOR
 
 from bot.database.connection import get_pool
 from bot.services.construction import BUILDINGS, get_production
 from bot.services.research import get_research_effects
+from bot.services.storage import (
+    get_storage_capacity,
+    get_realm_storage_capacity,
+)
 
 
 RESOURCES = ("wood", "stone", "gold", "food")
@@ -33,16 +38,19 @@ def calculate_production(buildings, research_effects=None):
 
         production[resource] += get_production(
             building_type,
-            building["level"]
+            building["level"],
         )
 
     for resource in RESOURCES:
         bonus = research_effects.get(
             f"{resource}_production",
-            0
+            0,
         )
 
-        multiplier = max(0, 1 + float(bonus))
+        multiplier = max(
+            0,
+            1 + float(bonus),
+        )
 
         production[resource] = int(
             production[resource] * multiplier
@@ -60,7 +68,7 @@ def split_tribute(production, rate):
     for resource in RESOURCES:
         amount = max(
             0,
-            int(production.get(resource, 0))
+            int(production.get(resource, 0)),
         )
 
         tribute_amount = int(
@@ -84,7 +92,7 @@ async def get_realm_research(connection, realm_id):
         FROM realm_research
         WHERE realm_id = $1
         """,
-        realm_id
+        realm_id,
     )
 
     return {
@@ -123,7 +131,7 @@ async def produce_resources():
                     FROM resources
                     WHERE realm_id = $1
                     """,
-                    realm_id
+                    realm_id,
                 )
 
                 if not elapsed:
@@ -135,12 +143,14 @@ async def produce_resources():
                     FROM buildings
                     WHERE realm_id = $1
                     """,
-                    realm_id
+                    realm_id,
                 )
+
+                capacity = get_storage_capacity(buildings)
 
                 research_levels = await get_realm_research(
                     connection,
-                    realm_id
+                    realm_id,
                 )
 
                 research_effects = get_research_effects(
@@ -149,7 +159,7 @@ async def produce_resources():
 
                 per_minute = calculate_production(
                     buildings,
-                    research_effects
+                    research_effects,
                 )
 
                 produced = {
@@ -169,13 +179,13 @@ async def produce_resources():
                       AND status = 'active'
                     FOR UPDATE
                     """,
-                    realm_id
+                    realm_id,
                 )
 
                 if relation:
                     tribute, retained = split_tribute(
                         produced,
-                        relation["tribute_rate"]
+                        relation["tribute_rate"],
                     )
                 else:
                     tribute = {
@@ -188,35 +198,52 @@ async def produce_resources():
                 await connection.execute(
                     """
                     UPDATE resources
-                    SET wood = wood + $1,
-                        stone = stone + $2,
-                        gold = gold + $3,
-                        food = food + $4,
+                    SET wood = LEAST($1, wood + $2),
+                        stone = LEAST($3, stone + $4),
+                        gold = LEAST($5, gold + $6),
+                        food = LEAST($7, food + $8),
                         updated_at = NOW()
-                    WHERE realm_id = $5
+                    WHERE realm_id = $9
                     """,
+                    capacity["wood"],
                     retained["wood"],
+                    capacity["stone"],
                     retained["stone"],
+                    capacity["gold"],
                     retained["gold"],
+                    capacity["food"],
                     retained["food"],
-                    realm_id
+                    realm_id,
                 )
 
                 if relation and any(tribute.values()):
+                    lord_id = relation["lord_realm_id"]
+
+                    lord_capacity = (
+                        await get_realm_storage_capacity(
+                            connection,
+                            lord_id,
+                        )
+                    )
+
                     await connection.execute(
                         """
                         UPDATE resources
-                        SET wood = wood + $1,
-                            stone = stone + $2,
-                            gold = gold + $3,
-                            food = food + $4
-                        WHERE realm_id = $5
+                        SET wood = LEAST($1, wood + $2),
+                            stone = LEAST($3, stone + $4),
+                            gold = LEAST($5, gold + $6),
+                            food = LEAST($7, food + $8)
+                        WHERE realm_id = $9
                         """,
+                        lord_capacity["wood"],
                         tribute["wood"],
+                        lord_capacity["stone"],
                         tribute["stone"],
+                        lord_capacity["gold"],
                         tribute["gold"],
+                        lord_capacity["food"],
                         tribute["food"],
-                        relation["lord_realm_id"]
+                        lord_id,
                     )
 
                     await connection.execute(
@@ -238,12 +265,12 @@ async def produce_resources():
                         tribute["wood"],
                         tribute["stone"],
                         tribute["gold"],
-                        tribute["food"]
+                        tribute["food"],
                     )
 
 
 async def production_worker():
-    print("Sistema de producción iniciado.")
+    print("Sistema de producción y almacenamiento iniciado.")
 
     while True:
         try:
