@@ -26,6 +26,7 @@ from bot.workers.production import production_worker
 from bot.workers.construction import construction_worker
 from bot.workers.military import military_worker
 from bot.workers.research import research_worker
+from bot.workers.missions import missions_worker
 
 
 async def main():
@@ -46,8 +47,6 @@ async def main():
     state = RuntimeState()
 
     try:
-        # Abrimos el puerto cuanto antes para que Render
-        # detecte el servicio.
         http_server = await start_health_server(state)
 
         http_task = asyncio.create_task(
@@ -57,8 +56,6 @@ async def main():
 
         await connect_database()
 
-        # El menú se registra antes de los controladores
-        # que reciben texto para fundar o renombrar reinos.
         dp.include_router(start_router)
         dp.include_router(menu_router)
 
@@ -88,10 +85,12 @@ async def main():
                 research_worker(),
                 name="kingdram-research",
             ),
+            asyncio.create_task(
+                missions_worker(),
+                name="kingdram-missions",
+            ),
         ])
 
-        # Asegura el modo polling si el bot tuvo
-        # un webhook configurado anteriormente.
         await bot.delete_webhook(
             drop_pending_updates=False,
         )
@@ -105,12 +104,10 @@ async def main():
         print("Sistema de construcción iniciado.")
         print("Sistema militar iniciado.")
         print("Sistema de investigación iniciado.")
+        print("Sistema de misiones militares iniciado.")
         print("Sistema de guerra registrado.")
-        print("Sistema de informes de batalla registrado.")
-        print("Sistema de vasallaje preparado.")
         print("Sistema territorial registrado.")
         print("Menú persistente conectado.")
-        print("Navegación directa registrada.")
         print("Handlers registrados.")
         print("Servidor HTTP listo.")
         print("Polling de Telegram iniciándose.")
