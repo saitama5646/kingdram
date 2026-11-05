@@ -110,8 +110,6 @@ def calculate_losses(troops, damage):
     defense = army_power(troops, "defense")
     defense_per_unit = max(1.0, defense / total_units)
 
-    # El daño determina las bajas. No se fuerza una baja
-    # por ronda: un ataque débil puede no causar pérdidas.
     losses_total = int(
         damage / max(1.0, defense_per_unit * 0.25)
     )
@@ -298,7 +296,7 @@ async def save_report(
     defender_owner = owner_map[defender_realm_id]
 
     attacker_remaining_power = army_power(attackers, "attack")
-    defender_remaining_power = army_power(defenders, "attack")
+    defender_remaining_power = army_power(defenders, "defense")
 
     if attackers and not defenders:
         outcome = "attacker_victory"
@@ -308,16 +306,10 @@ async def save_report(
         winner = defender_realm_id
     elif attackers and defenders:
         outcome = "inconclusive"
-
-        if attacker_remaining_power > defender_remaining_power:
-            winner = attacker_realm_id
-        elif defender_remaining_power > attacker_remaining_power:
-            winner = defender_realm_id
-        else:
-            winner = defender_realm_id
+        winner = None
     else:
         outcome = "mutual_destruction"
-        winner = defender_realm_id
+        winner = None
 
     report_id = await connection.fetchval(
         """
@@ -464,7 +456,7 @@ async def process_arrival(connection, mission):
     defender_initial = army_quantity(defenders)
 
     attacker_power_initial = army_power(attackers, "attack")
-    defender_power_initial = army_power(defenders, "attack")
+    defender_power_initial = army_power(defenders, "defense")
 
     attacker_morale = initial_morale(
         attacker_initial,

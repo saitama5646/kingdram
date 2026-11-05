@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from html import escape
 
@@ -104,7 +105,6 @@ async def render_troop_selection(message, state, edit=True):
     ])
 
     text = "\n".join(lines)
-
     keyboard = troop_selection_keyboard(quantities, available)
 
     if edit:
@@ -707,17 +707,29 @@ async def battle_report_handler(callback: CallbackQuery):
 
     await callback.answer()
 
-    attacker_won = (
-        report["winner_realm_id"] == report["attacker_realm_id"]
-    )
+    outcome = report["outcome"]
 
-    winner_name = (
-        report["attacker_name"]
-        if attacker_won
-        else report["defender_name"]
-    )
+    if outcome == "attacker_victory":
+        result_title = (
+            f"🏆 <b>VICTORIA: "
+            f"{escape(report['attacker_name'])}</b>"
+        )
+    elif outcome == "defender_victory":
+        result_title = (
+            f"🛡 <b>DEFENSA EXITOSA: "
+            f"{escape(report['defender_name'])}</b>"
+        )
+    elif outcome == "inconclusive":
+        result_title = "⚖️ <b>COMBATE INCONCLUSO</b>"
+    elif outcome == "mutual_destruction":
+        result_title = "☠️ <b>ANIQUILACIÓN MUTUA</b>"
+    else:
+        result_title = "⚔️ <b>RESULTADO DEL COMBATE</b>"
 
     date_text = report["created_at"].strftime("%d/%m/%Y %H:%M")
+
+    attacker_morale = float(report["attacker_morale"] or 1)
+    defender_morale = float(report["defender_morale"] or 1)
 
     lines = [
         f"📜 <b>INFORME DE BATALLA #{report['id']}</b>",
@@ -725,19 +737,23 @@ async def battle_report_handler(callback: CallbackQuery):
         f"📅 Fecha: <b>{date_text}</b>",
         "",
         "━━━━━━━━━━━━━━━━━━",
+        result_title,
+        f"🔁 Rondas disputadas: <b>{number(report['rounds'])}</b>",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
         "⚔ <b>FUERZAS ENFRENTADAS</b>",
         "",
         f"🏰 Atacante: <b>{escape(report['attacker_name'])}</b>",
         f"⚔ Poder ofensivo: <b>{number(report['attacker_power'])}</b>",
         f"💀 Bajas: <b>{number(report['attacker_losses'])}</b>",
+        f"🧭 Moral final: <b>{attacker_morale * 100:.1f}%</b>",
         "",
         f"🛡 Defensor: <b>{escape(report['defender_name'])}</b>",
         f"🛡 Poder defensivo: <b>{number(report['defender_power'])}</b>",
         f"💀 Bajas: <b>{number(report['defender_losses'])}</b>",
+        f"🧭 Moral final: <b>{defender_morale * 100:.1f}%</b>",
         "",
         "━━━━━━━━━━━━━━━━━━",
-        f"🏆 <b>VICTORIA: {escape(winner_name)}</b>",
-        "",
         "🪖 <b>DETALLE DE UNIDADES</b>",
         "",
     ]
@@ -790,6 +806,52 @@ async def battle_report_handler(callback: CallbackQuery):
             "",
             "👑 <b>Se ha desbloqueado la posibilidad de someter al reino derrotado.</b>",
         ])
+
+    round_log = report["round_log"] or []
+
+    if isinstance(round_log, str):
+        try:
+            round_log = json.loads(round_log)
+        except (TypeError, ValueError):
+            round_log = []
+
+    if round_log:
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "📖 <b>DESARROLLO DEL COMBATE</b>",
+            "",
+        ])
+
+        for entry in round_log:
+            lines.extend([
+                f"<b>Ronda {number(entry.get('round', 0))}</b>",
+                (
+                    "⚔ Daño atacante: "
+                    f"{number(round(entry.get('attacker_damage', 0)))}"
+                ),
+                (
+                    "🛡 Daño defensor: "
+                    f"{number(round(entry.get('defender_damage', 0)))}"
+                ),
+                (
+                    "💀 Bajas atacante: "
+                    f"{number(entry.get('attacker_losses', 0))}"
+                ),
+                (
+                    "💀 Bajas defensor: "
+                    f"{number(entry.get('defender_losses', 0))}"
+                ),
+                (
+                    "🪖 Tropas atacantes restantes: "
+                    f"{number(entry.get('attacker_remaining', 0))}"
+                ),
+                (
+                    "🪖 Tropas defensoras restantes: "
+                    f"{number(entry.get('defender_remaining', 0))}"
+                ),
+                "",
+            ])
 
     await callback.message.edit_text(
         "\n".join(lines),
