@@ -79,7 +79,8 @@ RESEARCH = {
         "building_requirements": {"barracks": 2},
         "effects": {
             "military_attack": 0.05,
-            "military_defense": 0.02
+            "military_hull": 0.02,
+            "military_shield": 0.02
         }
     },
     "fortification": {
@@ -92,9 +93,36 @@ RESEARCH = {
         "requirements": {"architecture": 1},
         "building_requirements": {"barracks": 2},
         "effects": {
-            "military_defense": 0.06
+            "military_hull": 0.06
         }
     },
+    "shield_technology": {
+        "name": "Tecnología de escudos",
+        "icon": "🔰",
+        "branch": "Ciencia militar",
+        "description": (
+            "Desarrolla sistemas de protección capaces de "
+            "absorber una mayor cantidad de impactos."
+        ),
+        "base_cost": {
+            "wood": 500,
+            "stone": 450,
+            "gold": 750,
+            "food": 250
+        },
+        "base_time": 600,
+        "requirements": {
+            "military_doctrine": 1,
+            "metallurgy": 2
+        },
+        "building_requirements": {
+            "barracks": 3
+        },
+        "effects": {
+            "military_shield": 0.05
+        }
+    },
+
     "logistics": {
         "name": "Logística",
         "icon": "🐎",

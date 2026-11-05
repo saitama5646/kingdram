@@ -384,5 +384,72 @@ class CombatTests(unittest.TestCase):
         )
 
 
+    def test_shield_research_improves_shield(self):
+        units = expand_combat_units(
+            [{"unit_type": "spearman", "quantity": 1}],
+            {
+                "military_attack": 0.10,
+                "military_hull": 0.20,
+                "military_shield": 0.50,
+            },
+        )
+
+        self.assertAlmostEqual(units[0]["attack"], 8.8)
+        self.assertAlmostEqual(units[0]["shield"], 18)
+        self.assertAlmostEqual(units[0]["hull"], 144)
+
+    def test_legacy_defense_research_still_improves_hull(self):
+        units = expand_combat_units(
+            [{"unit_type": "spearman", "quantity": 1}],
+            {"military_defense": 0.25},
+        )
+
+        self.assertAlmostEqual(units[0]["hull"], 150)
+
+    def test_zero_attack_does_not_damage_targets(self):
+        shooters = [
+            {"attack": 0, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 12,
+                "hull": 120,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            resolve_volley(shooters, targets, 1.0)
+
+        self.assertEqual(targets[0]["hull_damage"], 0)
+        self.assertFalse(targets[0]["destroyed"])
+
+    def test_destroyed_units_do_not_receive_more_shots(self):
+        shooters = [
+            {"attack": 100, "destroyed": False},
+            {"attack": 100, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 50,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.choice", side_effect=[0]):
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                with patch("bot.workers.missions.random.random", return_value=1.0):
+                    resolve_volley(shooters, targets, 1.0)
+
+        self.assertTrue(targets[0]["destroyed"])
+
+
 if __name__ == "__main__":
     unittest.main()

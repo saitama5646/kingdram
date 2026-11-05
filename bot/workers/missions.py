@@ -147,9 +147,16 @@ def expand_combat_units(troops, research_effects=None):
         float(research_effects.get("military_attack", 0)),
     )
 
-    defense_multiplier = 1.0 + max(
-        0.0,
+    hull_bonus = max(
+        float(research_effects.get("military_hull", 0)),
         float(research_effects.get("military_defense", 0)),
+    )
+
+    defense_multiplier = 1.0 + max(0.0, hull_bonus)
+
+    shield_multiplier = 1.0 + max(
+        0.0,
+        float(research_effects.get("military_shield", 0)),
     )
 
     units = []
@@ -169,7 +176,7 @@ def expand_combat_units(troops, research_effects=None):
 
         shield = max(
             0.0,
-            float(definition.get("shield", 0)),
+            float(definition.get("shield", 0)) * shield_multiplier,
         )
 
         hull = max(

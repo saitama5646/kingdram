@@ -1,3 +1,8 @@
+"""Funciones heredadas de combate e infraestructura.
+La resolución de batallas se realiza exclusivamente
+desde bot.workers.missions.
+"""
+
 from math import ceil
 from bot.database.connection import get_pool
 from bot.services.military import UNITS
@@ -286,6 +291,12 @@ async def get_battle_targets(user_id):
 
 
 async def resolve_battle(user_id, defender_realm_id):
+    raise RuntimeError(
+        "El motor antiguo está deshabilitado. "
+        "Las batallas deben iniciarse mediante misiones militares."
+    )
+
+    # LEGACY_BATTLE_ENGINE_DISABLED
     pool = await get_pool()
 
     async with pool.acquire() as connection:
