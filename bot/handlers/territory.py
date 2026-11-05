@@ -62,7 +62,7 @@ async def render_territories(callback: CallbackQuery):
         "🗺 <b>TERRITORIOS DEL REINO</b>",
         "",
         f"🏰 Dominio: <b>{realm['name']}</b>",
-        f"📍 Provincias controladas: <b>{len(provinces)}</b>",
+        f"📍 Provincia del reino: <b>{len(provinces)}/1</b>",
         "",
         "<b>PROVINCIAS</b>"
     ]
@@ -84,10 +84,11 @@ async def render_territories(callback: CallbackQuery):
 
     lines.extend([
         "",
-        "⚒ <b>Expansión territorial</b>",
-        "La colonización estará disponible cuando "
-        "se incorporen las tecnologías, los requisitos "
-        "y las posiciones de expansión."
+        "⚒ <b>Expansión del reino</b>",
+        "Cada reino dispone de una única provincia. "
+        "El crecimiento territorial se consigue "
+        "sometiendo otros reinos mediante el vasallaje, "
+        "no colonizando territorios vacíos."
     ])
 
     await callback.answer()
