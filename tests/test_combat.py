@@ -65,6 +65,17 @@ class CombatTests(unittest.TestCase):
             expected_defense,
         )
 
+        improved_defense = army_power(
+            troops,
+            "defense",
+            {"military_hull": 0.20},
+        )
+
+        self.assertAlmostEqual(
+            improved_defense,
+            expected_defense * 1.20,
+        )
+
     def test_damage_without_defenders_is_zero(self):
         damage = calculate_damage(
             self.attackers,
@@ -254,7 +265,8 @@ class CombatTests(unittest.TestCase):
         ]
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
-            resolve_volley(shooters, targets, 1.0)
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                resolve_volley(shooters, targets, 1.0)
 
         self.assertEqual(targets[0]["hull_damage"], 9)
 
@@ -274,8 +286,9 @@ class CombatTests(unittest.TestCase):
         ]
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
-            resolve_volley(shooters, targets, 1.0)
-            resolve_volley(shooters, targets, 1.0)
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                resolve_volley(shooters, targets, 1.0)
+                resolve_volley(shooters, targets, 1.0)
 
         self.assertEqual(targets[0]["hull_damage"], 0)
 
@@ -295,8 +308,9 @@ class CombatTests(unittest.TestCase):
         ]
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
-            with patch("bot.workers.missions.random.random", return_value=0.39):
-                resolve_volley(shooters, targets, 1.0)
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                with patch("bot.workers.missions.random.random", return_value=0.39):
+                    resolve_volley(shooters, targets, 1.0)
 
         self.assertTrue(targets[0]["destroyed"])
 
@@ -316,8 +330,9 @@ class CombatTests(unittest.TestCase):
         ]
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
-            with patch("bot.workers.missions.random.random") as random_roll:
-                resolve_volley(shooters, targets, 1.0)
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                with patch("bot.workers.missions.random.random") as random_roll:
+                    resolve_volley(shooters, targets, 1.0)
 
         random_roll.assert_not_called()
         self.assertFalse(targets[0]["destroyed"])
