@@ -4,7 +4,7 @@ from aiogram.types import (
 )
 
 
-def territory_keyboard():
+def territory_keyboard(province_available=False):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -13,6 +13,15 @@ def territory_keyboard():
                     callback_data="world",
                 )
             ],
+            *(
+                [[
+                    InlineKeyboardButton(
+                        text="🏞️ Fundar mi provincia",
+                        callback_data="province:menu",
+                    )
+                ]]
+                if province_available else []
+            ),
             [
                 InlineKeyboardButton(
                     text="🔄 Actualizar territorios",

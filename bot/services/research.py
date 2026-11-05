@@ -139,7 +139,33 @@ RESEARCH = {
             "gold_production": 0.02,
             "food_production": 0.02
         }
-    }
+    },
+
+    "provincial_administration": {
+        "name": "Administración provincial",
+        "icon": "🏞️",
+        "branch": "Administración territorial",
+        "description": (
+            "Desarrolla la organización administrativa necesaria "
+            "para establecer una provincia fuera del territorio "
+            "original del reino. Desbloquea la fundación de una "
+            "única provincia en un territorio completamente vacío."
+        ),
+        "base_cost": {
+            "wood": 3500,
+            "stone": 3000,
+            "gold": 5000,
+            "food": 1800
+        },
+        "base_time": 3600,
+        "requirements": {
+            "advanced_logistics": 2,
+            "economics": 1,
+            "architecture": 2
+        },
+        "building_requirements": {},
+        "effects": {}
+    },
 }
 
 

@@ -102,6 +102,7 @@ async def finish_research(bot: Bot):
                     "owner_id": item["owner_id"],
                     "realm_name": item["realm_name"],
                     "research_name": research_name,
+                    "research_type": research_type,
                     "target_level": target_level,
                 })
 
@@ -113,7 +114,13 @@ async def finish_research(bot: Bot):
                 f"Tu reino <b>{item['realm_name']}</b> "
                 f"ha desarrollado <b>{item['research_name']}</b> "
                 f"hasta el nivel <b>{item['target_level']}</b>.\n\n"
-                "Los efectos de esta tecnología ya están activos."
+                (
+                    "Ya puedes acudir a Territorios y elegir "
+                    "un territorio completamente vacío para fundar "
+                    "tu única provincia."
+                    if item["research_type"] == "provincial_administration"
+                    else "Los efectos de esta tecnología ya están activos."
+                )
             )
         except Exception:
             logging.exception(
