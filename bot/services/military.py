@@ -2,6 +2,7 @@
 from math import ceil
 
 from bot.database.connection import get_pool
+from bot.services.research import get_research_effects
 
 
 UNITS = {
@@ -78,6 +79,24 @@ def format_costs(costs):
     )
 
 
+async def get_realm_research_effects(connection, realm_id):
+    rows = await connection.fetch(
+        """
+        SELECT research_type, level
+        FROM realm_research
+        WHERE realm_id = $1
+        """,
+        realm_id,
+    )
+
+    levels = {
+        row["research_type"]: row["level"]
+        for row in rows
+    }
+
+    return get_research_effects(levels)
+
+
 async def finish_training(connection, realm_id):
     completed = await connection.fetch(
         """
@@ -85,7 +104,7 @@ async def finish_training(connection, realm_id):
         FROM training_queue
         WHERE realm_id = $1
           AND finishes_at <= NOW()
-        ORDER BY finishes_at
+        ORDER BY finishes_at, id
         FOR UPDATE
         """,
         realm_id,
@@ -162,7 +181,7 @@ async def get_military_data(user_id):
                 SELECT unit_type, quantity, finishes_at
                 FROM training_queue
                 WHERE realm_id = $1
-                ORDER BY finishes_at
+                ORDER BY finishes_at, id
                 """,
                 realm["id"],
             )
@@ -259,6 +278,35 @@ async def start_training(user_id, unit_type, quantity):
                     + format_costs(costs)
                 )
 
+            research_effects = (
+                await get_realm_research_effects(
+                    connection,
+                    realm_id,
+                )
+            )
+
+            training_bonus = max(
+                0,
+                float(
+                    research_effects.get(
+                        "training_speed",
+                        0,
+                    )
+                ),
+            )
+
+            barracks_bonus = (
+                1
+                + max(0, (barracks or 1) - 1) * 0.10
+            )
+
+            duration = ceil(
+                unit["seconds"]
+                * quantity
+                / barracks_bonus
+                / (1 + training_bonus)
+            )
+
             await connection.execute(
                 """
                 UPDATE resources
@@ -282,14 +330,6 @@ async def start_training(user_id, unit_type, quantity):
                 WHERE realm_id = $1
                 """,
                 realm_id,
-            )
-
-            duration = ceil(
-                unit["seconds"] * quantity
-                / (
-                    1
-                    + max(0, (barracks or 1) - 1) * 0.10
-                )
             )
 
             await connection.execute(
@@ -321,5 +361,7 @@ async def start_training(user_id, unit_type, quantity):
                 f"{unit['emoji']} <b>Entrenamiento iniciado</b>\n\n"
                 f"Unidad: {unit['name']}\n"
                 f"Cantidad: {quantity}\n"
+                f"Bonificación tecnológica: "
+                f"{training_bonus * 100:.0f}%\n"
                 f"Duración aproximada: {duration} segundos."
             )

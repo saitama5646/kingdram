@@ -1,3 +1,4 @@
+
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -14,7 +15,7 @@ def buildings_keyboard(levels=None, pending_type=None):
         level = levels.get(building_type, 0)
 
         if pending_type == building_type:
-            status = " · ⏳ En construcción"
+            status = " · ⏳ En cola"
         elif level > 0:
             status = f" · Nivel {level}"
         else:
@@ -49,18 +50,17 @@ def building_detail_keyboard(
 ):
     rows = []
 
-    if not pending:
-        if level == 0:
-            action = "⚒ Construir edificio"
-        else:
-            action = "⬆ Mejorar edificio"
+    if level == 0:
+        action = "⚒ Construir edificio"
+    else:
+        action = "⬆ Mejorar edificio"
 
-        rows.append([
-            InlineKeyboardButton(
-                text=action,
-                callback_data=f"upgrade:{building_type}",
-            )
-        ])
+    rows.append([
+        InlineKeyboardButton(
+            text=action,
+            callback_data=f"upgrade:{building_type}",
+        )
+    ])
 
     rows.append([
         InlineKeyboardButton(

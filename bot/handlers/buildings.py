@@ -1,3 +1,4 @@
+
 import math
 from datetime import datetime, timezone
 from html import escape
@@ -11,6 +12,7 @@ from bot.services.construction import (
     get_upgrade_cost,
     get_upgrade_time,
 )
+from bot.services.research import get_research_effects
 from bot.keyboards.buildings import (
     buildings_keyboard,
     building_detail_keyboard,
@@ -30,23 +32,15 @@ RESOURCE_LABELS = {
 
 
 def format_cost(cost):
-    """Devuelve el coste con el emoji correspondiente a cada recurso."""
-    lines = []
-
-    for resource, amount in cost.items():
-        label = RESOURCE_LABELS.get(
-            resource,
-            resource.capitalize(),
-        )
-        lines.append(f"{label}: <b>{amount:,}</b>")
-
-    return "\n".join(lines)
+    return "\n".join(
+        f"{RESOURCE_LABELS.get(resource, resource.capitalize())}: "
+        f"<b>{amount:,}</b>"
+        for resource, amount in cost.items()
+    )
 
 
 def format_duration(seconds):
-    """Convierte segundos en un texto legible."""
     seconds = max(0, int(seconds))
-
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
 
@@ -65,19 +59,49 @@ def format_duration(seconds):
 
 
 def format_remaining(finishes_at):
-    """Calcula cuánto falta para terminar una construcción."""
     if finishes_at.tzinfo is None:
         finishes_at = finishes_at.replace(tzinfo=timezone.utc)
 
     remaining = math.ceil(
-        (finishes_at - datetime.now(timezone.utc)).total_seconds()
+        (
+            finishes_at - datetime.now(timezone.utc)
+        ).total_seconds()
     )
 
     return format_duration(remaining)
 
 
+async def get_realm_research_effects(connection, realm_id):
+    rows = await connection.fetch(
+        """
+        SELECT research_type, level
+        FROM realm_research
+        WHERE realm_id = $1
+        """,
+        realm_id,
+    )
+
+    levels = {
+        row["research_type"]: row["level"]
+        for row in rows
+    }
+
+    return get_research_effects(levels)
+
+
+def apply_construction_speed(base_duration, effects):
+    bonus = max(
+        0,
+        float(effects.get("construction_speed", 0)),
+    )
+
+    return max(
+        1,
+        math.ceil(base_duration / (1 + bonus)),
+    )
+
+
 async def get_realm_building_data(user_id):
-    """Obtiene el reino, sus edificios y la construcción pendiente."""
     pool = await get_pool()
 
     async with pool.acquire() as connection:
@@ -91,7 +115,7 @@ async def get_realm_building_data(user_id):
         )
 
         if not realm:
-            return None, [], None
+            return None, [], []
 
         buildings = await connection.fetch(
             """
@@ -102,22 +126,25 @@ async def get_realm_building_data(user_id):
             realm["id"],
         )
 
-        pending = await connection.fetchrow(
+        queue = await connection.fetch(
             """
-            SELECT building_type, target_level, finishes_at
+            SELECT
+                building_type,
+                target_level,
+                queue_position,
+                finishes_at
             FROM construction_queue
             WHERE realm_id = $1
-            ORDER BY finishes_at
-            LIMIT 1
+            ORDER BY queue_position, finishes_at, id
             """,
             realm["id"],
         )
 
-    return realm, buildings, pending
+    return realm, buildings, queue
 
 
 async def render_buildings(callback):
-    realm, buildings, pending = await get_realm_building_data(
+    realm, buildings, queue = await get_realm_building_data(
         callback.from_user.id
     )
 
@@ -139,35 +166,40 @@ async def render_buildings(callback):
         "",
         f"🏰 Dominio: <b>{escape(realm['name'])}</b>",
         "",
-        "Selecciona un edificio para consultar sus "
-        "características, construirlo o mejorarlo.",
+        "Selecciona un edificio para consultar "
+        "sus características y mejorarlo.",
     ]
 
-    if pending:
-        pending_info = BUILDINGS.get(
-            pending["building_type"],
-            {},
-        )
-
-        pending_name = escape(
-            pending_info.get(
-                "name",
-                pending["building_type"],
-            )
-        )
-
-        pending_icon = pending_info.get("icon", "🏗")
-
+    if queue:
         lines.extend([
             "",
-            "⏳ <b>CONSTRUCCIÓN EN CURSO</b>",
-            f"{pending_icon} {pending_name}",
-            f"Nivel objetivo: <b>{pending['target_level']}</b>",
-            (
-                "Tiempo restante: "
-                f"<b>{format_remaining(pending['finishes_at'])}</b>"
-            ),
+            "⏳ <b>COLA DE CONSTRUCCIÓN</b>",
         ])
+
+        for item in queue:
+            info = BUILDINGS.get(
+                item["building_type"],
+                {},
+            )
+
+            name = info.get(
+                "name",
+                item["building_type"],
+            )
+
+            icon = info.get("icon", "🏗")
+
+            lines.append(
+                f"{item['queue_position']}. "
+                f"{icon} <b>{escape(name)}</b> "
+                f"→ nivel {item['target_level']}"
+            )
+
+            if item["queue_position"] == 1:
+                lines.append(
+                    "   Tiempo restante: "
+                    f"<b>{format_remaining(item['finishes_at'])}</b>"
+                )
     else:
         lines.extend([
             "",
@@ -179,7 +211,7 @@ async def render_buildings(callback):
         reply_markup=buildings_keyboard(
             levels=levels,
             pending_type=(
-                pending["building_type"] if pending else None
+                queue[0]["building_type"] if queue else None
             ),
         ),
     )
@@ -222,6 +254,8 @@ async def building_detail_handler(callback: CallbackQuery):
             )
             return
 
+        realm_id = realm["id"]
+
         building = await connection.fetchrow(
             """
             SELECT level
@@ -229,35 +263,73 @@ async def building_detail_handler(callback: CallbackQuery):
             WHERE realm_id = $1
               AND building_type = $2
             """,
-            realm["id"],
+            realm_id,
             building_type,
         )
 
-        pending = await connection.fetchrow(
+        queued = await connection.fetch(
             """
-            SELECT building_type, target_level, finishes_at
+            SELECT target_level, queue_position, finishes_at
             FROM construction_queue
             WHERE realm_id = $1
-            ORDER BY finishes_at
-            LIMIT 1
+              AND building_type = $2
+            ORDER BY queue_position, finishes_at, id
             """,
-            realm["id"],
+            realm_id,
+            building_type,
+        )
+
+        full_queue = await connection.fetch(
+            """
+            SELECT
+                building_type,
+                target_level,
+                queue_position,
+                finishes_at
+            FROM construction_queue
+            WHERE realm_id = $1
+            ORDER BY queue_position, finishes_at, id
+            """,
+            realm_id,
+        )
+
+        effects = await get_realm_research_effects(
+            connection,
+            realm_id,
         )
 
     level = building["level"] if building else 0
-    next_level = level + 1
+
+    next_level = (
+        max(item["target_level"] for item in queued) + 1
+        if queued
+        else level + 1
+    )
 
     cost = get_upgrade_cost(
         building_type,
         next_level,
     )
 
-    duration = get_upgrade_time(
+    base_duration = get_upgrade_time(
         building_type,
         next_level,
     )
 
-    action = "construcción" if level == 0 else "mejora"
+    duration = apply_construction_speed(
+        base_duration,
+        effects,
+    )
+
+    construction_bonus = (
+        float(effects.get("construction_speed", 0)) * 100
+    )
+
+    action = (
+        "construcción"
+        if level == 0 and not queued
+        else "mejora"
+    )
 
     lines = [
         f"{info['icon']} <b>{escape(info['name'].upper())}</b>",
@@ -270,34 +342,53 @@ async def building_detail_handler(callback: CallbackQuery):
         f"<b>Coste de {action}</b>",
         format_cost(cost),
         "",
-        f"⏱ Tiempo: <b>{format_duration(duration)}</b>",
+        f"⏱ Tiempo base: <b>{format_duration(base_duration)}</b>",
+        (
+            "🏛️ Bonificación de Arquitectura: "
+            f"<b>{construction_bonus:.0f}%</b>"
+        ),
+        f"⏱ Tiempo efectivo: <b>{format_duration(duration)}</b>",
     ]
 
-    if pending:
-        pending_info = BUILDINGS.get(
-            pending["building_type"],
-            {},
-        )
-
-        pending_name = escape(
-            pending_info.get(
-                "name",
-                pending["building_type"],
-            )
-        )
-
-        pending_icon = pending_info.get("icon", "🏗")
-
+    if queued:
         lines.extend([
             "",
-            "⏳ <b>COLA DE CONSTRUCCIÓN</b>",
-            f"{pending_icon} Edificio: <b>{pending_name}</b>",
-            f"Nivel objetivo: <b>{pending['target_level']}</b>",
-            (
-                "Tiempo restante: "
-                f"<b>{format_remaining(pending['finishes_at'])}</b>"
-            ),
+            "⏳ <b>EDIFICIO EN COLA</b>",
         ])
+
+        for item in queued:
+            lines.append(
+                f"Posición {item['queue_position']}: "
+                f"nivel {item['target_level']}"
+            )
+
+    if full_queue:
+        lines.extend([
+            "",
+            "🏗 <b>COLA GENERAL</b>",
+        ])
+
+        for item in full_queue:
+            pending_info = BUILDINGS.get(
+                item["building_type"],
+                {},
+            )
+
+            pending_name = pending_info.get(
+                "name",
+                item["building_type"],
+            )
+
+            lines.append(
+                f"{item['queue_position']}. "
+                f"{escape(pending_name)} "
+                f"→ nivel {item['target_level']}"
+            )
+
+        lines.append(
+            "Tiempo restante de la primera tarea: "
+            f"<b>{format_remaining(full_queue[0]['finishes_at'])}</b>"
+        )
 
     await callback.answer()
 
@@ -306,7 +397,7 @@ async def building_detail_handler(callback: CallbackQuery):
         reply_markup=building_detail_keyboard(
             building_type=building_type,
             level=level,
-            pending=bool(pending),
+            pending=False,
         ),
     )
 
@@ -324,6 +415,7 @@ async def upgrade_building_handler(callback: CallbackQuery):
 
     pool = await get_pool()
     error_message = None
+    target_level = None
 
     async with pool.acquire() as connection:
         async with connection.transaction():
@@ -343,128 +435,155 @@ async def upgrade_building_handler(callback: CallbackQuery):
             else:
                 realm_id = realm["id"]
 
-                pending = await connection.fetchrow(
+                building = await connection.fetchrow(
                     """
-                    SELECT building_type
+                    SELECT level
+                    FROM buildings
+                    WHERE realm_id = $1
+                      AND building_type = $2
+                    FOR UPDATE
+                    """,
+                    realm_id,
+                    building_type,
+                )
+
+                current_level = (
+                    building["level"] if building else 0
+                )
+
+                queued_level = await connection.fetchval(
+                    """
+                    SELECT MAX(target_level)
                     FROM construction_queue
                     WHERE realm_id = $1
-                    LIMIT 1
+                      AND building_type = $2
+                    """,
+                    realm_id,
+                    building_type,
+                )
+
+                target_level = (
+                    max(current_level, queued_level) + 1
+                    if queued_level is not None
+                    else current_level + 1
+                )
+
+                cost = get_upgrade_cost(
+                    building_type,
+                    target_level,
+                )
+
+                base_duration = get_upgrade_time(
+                    building_type,
+                    target_level,
+                )
+
+                effects = await get_realm_research_effects(
+                    connection,
+                    realm_id,
+                )
+
+                duration = apply_construction_speed(
+                    base_duration,
+                    effects,
+                )
+
+                queue_data = await connection.fetchrow(
+                    """
+                    SELECT
+                        COALESCE(MAX(queue_position), 0)
+                            AS last_position,
+                        MAX(finishes_at) AS last_finish
+                    FROM construction_queue
+                    WHERE realm_id = $1
+                    """,
+                    realm_id,
+                )
+
+                next_position = (
+                    queue_data["last_position"] + 1
+                )
+
+                resources = await connection.fetchrow(
+                    """
+                    SELECT wood, stone, gold, food
+                    FROM resources
+                    WHERE realm_id = $1
                     FOR UPDATE
                     """,
                     realm_id,
                 )
 
-                if pending:
-                    pending_name = BUILDINGS.get(
-                        pending["building_type"],
-                        {},
-                    ).get(
-                        "name",
-                        pending["building_type"],
-                    )
-
+                if not resources:
                     error_message = (
-                        f"Ya tienes una construcción activa: "
-                        f"{pending_name}. Espera a que termine."
+                        "No se encontraron los recursos del reino."
                     )
 
                 else:
-                    building = await connection.fetchrow(
-                        """
-                        SELECT level
-                        FROM buildings
-                        WHERE realm_id = $1
-                          AND building_type = $2
-                        FOR UPDATE
-                        """,
-                        realm_id,
-                        building_type,
-                    )
+                    insufficient = [
+                        RESOURCE_LABELS.get(
+                            resource,
+                            resource.capitalize(),
+                        )
+                        for resource, amount in cost.items()
+                        if resources[resource] < amount
+                    ]
 
-                    current_level = (
-                        building["level"] if building else 0
-                    )
-
-                    target_level = current_level + 1
-
-                    cost = get_upgrade_cost(
-                        building_type,
-                        target_level,
-                    )
-
-                    duration = get_upgrade_time(
-                        building_type,
-                        target_level,
-                    )
-
-                    resources = await connection.fetchrow(
-                        """
-                        SELECT wood, stone, gold, food
-                        FROM resources
-                        WHERE realm_id = $1
-                        FOR UPDATE
-                        """,
-                        realm_id,
-                    )
-
-                    if not resources:
+                    if insufficient:
                         error_message = (
-                            "No se encontraron los recursos del reino."
+                            "Recursos insuficientes:\n"
+                            + "\n".join(insufficient)
                         )
 
-                    else:
-                        insufficient = [
-                            RESOURCE_LABELS.get(
-                                resource,
-                                resource.capitalize(),
-                            )
-                            for resource, amount in cost.items()
-                            if resources[resource] < amount
-                        ]
+                if not error_message:
+                    await connection.execute(
+                        """
+                        UPDATE resources
+                        SET wood = wood - $1,
+                            stone = stone - $2,
+                            gold = gold - $3,
+                            food = food - $4
+                        WHERE realm_id = $5
+                        """,
+                        cost.get("wood", 0),
+                        cost.get("stone", 0),
+                        cost.get("gold", 0),
+                        cost.get("food", 0),
+                        realm_id,
+                    )
 
-                        if insufficient:
-                            error_message = (
-                                "Recursos insuficientes:\n"
-                                + "\n".join(insufficient)
-                            )
-
-                        else:
-                            await connection.execute(
-                                """
-                                UPDATE resources
-                                SET wood = wood - $1,
-                                    stone = stone - $2,
-                                    gold = gold - $3,
-                                    food = food - $4
-                                WHERE realm_id = $5
-                                """,
-                                cost.get("wood", 0),
-                                cost.get("stone", 0),
-                                cost.get("gold", 0),
-                                cost.get("food", 0),
-                                realm_id,
-                            )
-
-                            await connection.execute(
-                                """
-                                INSERT INTO construction_queue (
-                                    realm_id,
-                                    building_type,
-                                    target_level,
-                                    finishes_at
-                                )
-                                VALUES (
-                                    $1,
-                                    $2,
-                                    $3,
-                                    NOW() + $4 * INTERVAL '1 second'
-                                )
-                                """,
-                                realm_id,
-                                building_type,
-                                target_level,
-                                duration,
-                            )
+                    await connection.execute(
+                        """
+                        INSERT INTO construction_queue (
+                            realm_id,
+                            building_type,
+                            target_level,
+                            queue_position,
+                            started_at,
+                            finishes_at
+                        )
+                        VALUES (
+                            $1,
+                            $2,
+                            $3,
+                            $4,
+                            GREATEST(
+                                NOW(),
+                                COALESCE($5, NOW())
+                            ),
+                            GREATEST(
+                                NOW(),
+                                COALESCE($5, NOW())
+                            ) + $6 * INTERVAL '1 second'
+                        )
+                        """,
+                        realm_id,
+                        building_type,
+                        target_level,
+                        next_position,
+                        queue_data["last_finish"],
+                        duration,
+                    )
 
     if error_message:
         await callback.answer(
@@ -473,5 +592,8 @@ async def upgrade_building_handler(callback: CallbackQuery):
         )
         return
 
-    await callback.answer("Construcción iniciada.")
+    await callback.answer(
+        f"Edificio añadido a la cola: nivel {target_level}."
+    )
+
     await render_buildings(callback)

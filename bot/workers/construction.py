@@ -26,12 +26,16 @@ async def finish_constructions(bot: Bot):
                 FROM construction_queue cq
                 JOIN realms r ON r.id = cq.realm_id
                 WHERE cq.finishes_at <= NOW()
-                ORDER BY cq.finishes_at
+                ORDER BY cq.finishes_at, cq.id
                 FOR UPDATE OF cq SKIP LOCKED
                 """
             )
 
             for item in completed:
+                building_type = item["building_type"]
+                target_level = item["target_level"]
+                realm_id = item["realm_id"]
+
                 await connection.execute(
                     """
                     INSERT INTO buildings (
@@ -41,11 +45,15 @@ async def finish_constructions(bot: Bot):
                     )
                     VALUES ($1, $2, $3)
                     ON CONFLICT (realm_id, building_type)
-                    DO UPDATE SET level = EXCLUDED.level
+                    DO UPDATE SET
+                        level = GREATEST(
+                            buildings.level,
+                            EXCLUDED.level
+                        )
                     """,
-                    item["realm_id"],
-                    item["building_type"],
-                    item["target_level"]
+                    realm_id,
+                    building_type,
+                    target_level,
                 )
 
                 await connection.execute(
@@ -54,7 +62,24 @@ async def finish_constructions(bot: Bot):
                     SET power = power + 25
                     WHERE id = $1
                     """,
-                    item["realm_id"]
+                    realm_id,
+                )
+
+                await connection.execute(
+                    """
+                    INSERT INTO realm_event_log (
+                        realm_id,
+                        event_type,
+                        description
+                    )
+                    VALUES ($1, 'construction_completed', $2)
+                    """,
+                    realm_id,
+                    (
+                        f"Construcción completada: "
+                        f"{building_type} "
+                        f"nivel {target_level}."
+                    ),
                 )
 
                 await connection.execute(
@@ -62,19 +87,27 @@ async def finish_constructions(bot: Bot):
                     DELETE FROM construction_queue
                     WHERE id = $1
                     """,
-                    item["id"]
+                    item["id"],
                 )
 
                 notifications.append({
                     "owner_id": item["owner_id"],
                     "realm_name": item["realm_name"],
-                    "building_type": item["building_type"],
-                    "target_level": item["target_level"]
+                    "building_type": building_type,
+                    "target_level": target_level,
                 })
 
     for item in notifications:
-        info = BUILDINGS.get(item["building_type"], {})
-        name = info.get("name", item["building_type"])
+        info = BUILDINGS.get(
+            item["building_type"],
+            {},
+        )
+
+        name = info.get(
+            "name",
+            item["building_type"],
+        )
+
         icon = info.get("icon", "🏰")
 
         try:
@@ -85,6 +118,7 @@ async def finish_constructions(bot: Bot):
                 f"ha completado {icon} <b>{name}</b>, "
                 f"nivel {item['target_level']}."
             )
+
         except Exception:
             logging.exception(
                 "No se pudo enviar la notificación "

@@ -4,20 +4,24 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.services.research import RESEARCH
 
 
-def research_keyboard(levels=None, pending_type=None):
+def research_keyboard(levels=None, pending_types=None):
     levels = levels or {}
+    pending_types = pending_types or {}
     rows = []
 
     branches = {}
 
     for key, research in RESEARCH.items():
-        branches.setdefault(research["branch"], []).append(key)
+        branches.setdefault(
+            research["branch"],
+            [],
+        ).append(key)
 
     for branch, technologies in branches.items():
         rows.append([
             InlineKeyboardButton(
                 text=f"━━ {branch.upper()} ━━",
-                callback_data="research"
+                callback_data="research",
             )
         ])
 
@@ -25,15 +29,21 @@ def research_keyboard(levels=None, pending_type=None):
             research = RESEARCH[key]
             level = levels.get(key, 0)
 
-            if pending_type == key:
-                status = " · Investigando"
+            if key in pending_types:
+                status = (
+                    f" · En cola: "
+                    f"{pending_types[key]}"
+                )
             else:
                 status = f" · Nv. {level}"
 
             rows.append([
                 InlineKeyboardButton(
-                    text=f"{research['icon']} {research['name']}{status}",
-                    callback_data=f"research:tech:{key}"
+                    text=(
+                        f"{research['icon']} "
+                        f"{research['name']}{status}"
+                    ),
+                    callback_data=f"research:tech:{key}",
                 )
             ])
 
@@ -41,28 +51,34 @@ def research_keyboard(levels=None, pending_type=None):
         [
             InlineKeyboardButton(
                 text="🔬 Cola de investigación",
-                callback_data="research:queue"
+                callback_data="research:queue",
             )
         ],
         [
             InlineKeyboardButton(
                 text="↩ Menú principal",
-                callback_data="main_menu"
+                callback_data="main_menu",
             )
-        ]
+        ],
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
+    )
 
 
-def research_detail_keyboard(research_type, can_start, pending=False):
+def research_detail_keyboard(
+    research_type,
+    can_start,
+    pending=False,
+):
     rows = []
 
-    if can_start and not pending:
+    if can_start:
         rows.append([
             InlineKeyboardButton(
-                text="🔬 Investigar siguiente nivel",
-                callback_data=f"research:start:{research_type}"
+                text="🔬 Añadir a la cola",
+                callback_data=f"research:start:{research_type}",
             )
         ])
 
@@ -70,18 +86,20 @@ def research_detail_keyboard(research_type, can_start, pending=False):
         [
             InlineKeyboardButton(
                 text="↩ Árbol tecnológico",
-                callback_data="research"
+                callback_data="research",
             )
         ],
         [
             InlineKeyboardButton(
                 text="⌂ Menú principal",
-                callback_data="main_menu"
+                callback_data="main_menu",
             )
-        ]
+        ],
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
+    )
 
 
 def research_queue_keyboard():
@@ -90,14 +108,14 @@ def research_queue_keyboard():
             [
                 InlineKeyboardButton(
                     text="↩ Árbol tecnológico",
-                    callback_data="research"
+                    callback_data="research",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="⌂ Menú principal",
-                    callback_data="main_menu"
+                    callback_data="main_menu",
                 )
-            ]
+            ],
         ]
     )

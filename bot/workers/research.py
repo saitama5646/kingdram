@@ -1,5 +1,6 @@
 
 import asyncio
+import logging
 
 from bot.database.connection import get_pool
 from bot.services.research import RESEARCH
@@ -19,19 +20,30 @@ async def finish_research():
                     target_level
                 FROM research_queue
                 WHERE finishes_at <= NOW()
-                ORDER BY finishes_at
+                ORDER BY finishes_at, id
                 FOR UPDATE SKIP LOCKED
                 """
             )
 
             for item in completed:
                 research_type = item["research_type"]
+                realm_id = item["realm_id"]
+                target_level = item["target_level"]
 
                 if research_type not in RESEARCH:
-                    await connection.execute(
-                        "DELETE FROM research_queue WHERE id = $1",
-                        item["id"]
+                    logging.error(
+                        "Investigación desconocida en cola: %s",
+                        research_type,
                     )
+
+                    await connection.execute(
+                        """
+                        DELETE FROM research_queue
+                        WHERE id = $1
+                        """,
+                        item["id"],
+                    )
+
                     continue
 
                 await connection.execute(
@@ -51,9 +63,9 @@ async def finish_research():
                         ),
                         updated_at = NOW()
                     """,
-                    item["realm_id"],
+                    realm_id,
                     research_type,
-                    item["target_level"]
+                    target_level,
                 )
 
                 await connection.execute(
@@ -65,12 +77,12 @@ async def finish_research():
                     )
                     VALUES ($1, 'research_completed', $2)
                     """,
-                    item["realm_id"],
+                    realm_id,
                     (
                         f"Investigación completada: "
                         f"{RESEARCH[research_type]['name']} "
-                        f"nivel {item['target_level']}."
-                    )
+                        f"nivel {target_level}."
+                    ),
                 )
 
                 await connection.execute(
@@ -78,11 +90,13 @@ async def finish_research():
                     DELETE FROM research_queue
                     WHERE id = $1
                     """,
-                    item["id"]
+                    item["id"],
                 )
 
 
 async def research_worker():
+    print("Sistema de investigación iniciado.")
+
     while True:
         try:
             await finish_research()
@@ -90,7 +104,9 @@ async def research_worker():
         except asyncio.CancelledError:
             raise
 
-        except Exception as error:
-            print(f"Error finalizando investigaciones: {error}")
+        except Exception:
+            logging.exception(
+                "Error finalizando investigaciones."
+            )
 
         await asyncio.sleep(10)
