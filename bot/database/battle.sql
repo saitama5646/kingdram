@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS battle_reports (
     defender_morale NUMERIC(5,3) NOT NULL DEFAULT 1.0,
 
     round_log JSONB NOT NULL DEFAULT '[]'::JSONB,
+    infrastructure_log JSONB NOT NULL DEFAULT '[]'::JSONB,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -83,6 +84,9 @@ ADD COLUMN IF NOT EXISTS defender_morale NUMERIC(5,3) NOT NULL DEFAULT 1.0;
 
 ALTER TABLE battle_reports
 ADD COLUMN IF NOT EXISTS round_log JSONB NOT NULL DEFAULT '[]'::JSONB;
+
+ALTER TABLE battle_reports
+ADD COLUMN IF NOT EXISTS infrastructure_log JSONB NOT NULL DEFAULT '[]'::JSONB;
 
 
 -- =========================================================

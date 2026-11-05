@@ -249,9 +249,10 @@ async def damage_infrastructure(
     )
 
     before = infrastructure_value(buildings)
+    infrastructure_log = []
 
     if before <= 0 or target_damage <= 0:
-        return before, before, 0.0
+        return before, before, 0.0, infrastructure_log
 
     target_value = int(before * target_damage)
     destroyed_value = 0
@@ -261,7 +262,8 @@ async def damage_infrastructure(
             break
 
         building_type = building["building_type"]
-        level = int(building["level"])
+        original_level = int(building["level"])
+        level = original_level
 
         definition = BUILDINGS.get(building_type)
 
@@ -301,6 +303,14 @@ async def damage_infrastructure(
                 building["id"],
             )
 
+        if level < original_level:
+            infrastructure_log.append({
+                "building_type": building_type,
+                "old_level": original_level,
+                "new_level": max(0, level),
+                "destroyed_levels": original_level - max(0, level),
+            })
+
     remaining_buildings = await connection.fetch(
         """
         SELECT building_type, level
@@ -318,7 +328,12 @@ async def damage_infrastructure(
         else 0.0
     )
 
-    return before, after, min(1.0, actual_damage)
+    return (
+        before,
+        after,
+        min(1.0, actual_damage),
+        infrastructure_log,
+    )
 
 
 async def save_attacker_survivors(
@@ -431,6 +446,7 @@ async def save_report(
     infrastructure_before = 0
     infrastructure_after = 0
     infrastructure_damage = 0.0
+    infrastructure_log = []
     vassalage_unlocked = False
 
     if outcome == "attacker_victory":
@@ -448,6 +464,7 @@ async def save_report(
             infrastructure_before,
             infrastructure_after,
             infrastructure_damage,
+            infrastructure_log,
         ) = await damage_infrastructure(
             connection,
             defender_realm_id,
@@ -478,13 +495,14 @@ async def save_report(
             rounds,
             attacker_morale,
             defender_morale,
-            round_log
+            round_log,
+            infrastructure_log
         )
         VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
             $10, $11, $12, $13,
-            $14, $15, $16, $17, $18::JSONB
+            $14, $15, $16, $17, $18::JSONB, $19::JSONB
         )
         RETURNING id
         """,
@@ -506,7 +524,39 @@ async def save_report(
         round(attacker_morale, 3),
         round(defender_morale, 3),
         json.dumps(round_log),
+        json.dumps(infrastructure_log),
     )
+
+    if vassalage_unlocked:
+        await connection.execute(
+            """
+            INSERT INTO vassalage_requests (
+                lord_realm_id,
+                vassal_realm_id,
+                destruction_ratio,
+                status
+            )
+            SELECT $1, $2, $3, 'pending'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM vassalage_relations
+                WHERE vassal_realm_id = $2
+                  AND status = 'active'
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM vassalage_requests
+                WHERE vassal_realm_id = $2
+                  AND status = 'pending'
+            )
+            ON CONFLICT (vassal_realm_id)
+            WHERE status = 'pending'
+            DO NOTHING
+            """,
+            attacker_realm_id,
+            defender_realm_id,
+            infrastructure_damage,
+        )
 
     attacker_lost = losses_map(attacker_original, attackers)
     defender_lost = losses_map(defender_original, defenders)

@@ -783,10 +783,46 @@ async def battle_report_handler(callback: CallbackQuery):
         f"📉 Infraestructura dañada: <b>{damage:.1f}%</b>",
     ])
 
+    infrastructure_log = report["infrastructure_log"] or []
+
+    if isinstance(infrastructure_log, str):
+        try:
+            infrastructure_log = json.loads(infrastructure_log)
+        except (TypeError, ValueError):
+            infrastructure_log = []
+
+    if infrastructure_log:
+        lines.extend([
+            "",
+            "🏚 <b>EDIFICIOS AFECTADOS</b>",
+            "",
+        ])
+
+        for building in infrastructure_log:
+            building_type = escape(
+                str(building.get("building_type", "Edificio"))
+            )
+            old_level = int(building.get("old_level", 0))
+            new_level = int(building.get("new_level", 0))
+
+            if new_level <= 0:
+                lines.append(
+                    f"💥 <b>{building_type}</b>: "
+                    f"nivel {old_level} — destruido"
+                )
+            else:
+                lines.append(
+                    f"⚒️ <b>{building_type}</b>: "
+                    f"nivel {old_level} → {new_level}"
+                )
+
+        lines.append("")
+
     if report["vassalage_unlocked"]:
         lines.extend([
             "",
-            "👑 <b>Se ha desbloqueado la posibilidad de someter al reino derrotado.</b>",
+            "👑 <b>Se ha desbloqueado el vasallaje.</b>",
+            "📨 Se ha enviado una solicitud de sometimiento al reino derrotado.",
         ])
 
     round_log = report["round_log"] or []
