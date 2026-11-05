@@ -76,6 +76,17 @@ class CombatTests(unittest.TestCase):
             expected_defense * 1.20,
         )
 
+        improved_defense = army_power(
+            troops,
+            "defense",
+            {"military_hull": 0.20},
+        )
+
+        self.assertAlmostEqual(
+            improved_defense,
+            expected_defense * 1.20,
+        )
+
     def test_damage_without_defenders_is_zero(self):
         damage = calculate_damage(
             self.attackers,
@@ -361,12 +372,14 @@ class CombatTests(unittest.TestCase):
         ]
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
-            result = resolve_battle_round(
-                attackers,
-                defenders,
-                1.0,
-                1.0,
-            )
+            with patch("bot.workers.missions.random.uniform", return_value=1.0):
+                with patch("bot.workers.missions.random.random", return_value=1.0):
+                    result = resolve_battle_round(
+                        attackers,
+                        defenders,
+                        1.0,
+                        1.0,
+                    )
 
         attacker_survivors, defender_survivors = result[0], result[1]
 
@@ -420,6 +433,70 @@ class CombatTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(units[0]["hull"], 150)
+
+    def test_volley_only_targets_living_units(self):
+        shooters = [
+            {"attack": 5, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": True,
+            },
+            {
+                "unit_type": "archer",
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ) as target_roll:
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                resolve_volley(shooters, targets, 1.0)
+
+        target_roll.assert_called_once_with(1)
+        self.assertEqual(targets[0]["hull_damage"], 0)
+        self.assertEqual(targets[1]["hull_damage"], 5)
+
+    def test_volley_tracks_shield_and_hull_damage(self):
+        shooters = [
+            {"attack": 15, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 6,
+                "hull": 120,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ):
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                resolve_volley(shooters, targets, 1.0)
+
+        self.assertEqual(targets[0]["round_shield_damage"], 6)
+        self.assertEqual(targets[0]["round_hull_damage"], 9)
 
     def test_zero_attack_does_not_damage_targets(self):
         shooters = [
