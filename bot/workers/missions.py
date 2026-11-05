@@ -8,6 +8,7 @@ from math import ceil
 from bot.database.connection import get_pool
 from bot.services.missions import finish_returning_mission
 from bot.services.military import UNITS
+from bot.services.research import get_research_effects
 from bot.services.construction import BUILDINGS
 
 
@@ -29,11 +30,30 @@ def army_quantity(troops):
     return sum(max(0, int(t["quantity"])) for t in troops)
 
 
-def army_power(troops, stat):
+def army_power(troops, stat, research_effects=None):
+    research_effects = research_effects or {}
+
+    effect_name = (
+        "military_attack"
+        if stat == "attack"
+        else "military_defense"
+        if stat == "defense"
+        else None
+    )
+
+    multiplier = 1.0
+
+    if effect_name:
+        multiplier += max(
+            0.0,
+            float(research_effects.get(effect_name, 0)),
+        )
+
     return sum(
-        max(0, int(t["quantity"]))
-        * int(UNITS.get(t["unit_type"], {}).get(stat, 0))
-        for t in troops
+        max(0, int(troop["quantity"]))
+        * float(UNITS.get(troop["unit_type"], {}).get(stat, 0))
+        * multiplier
+        for troop in troops
     )
 
 
@@ -92,39 +112,79 @@ def update_morale(
 
 
 def calculate_damage(attackers, defenders, morale):
-    """
-    Daño ofensivo bruto de una salva.
-    La defensa ya no reduce artificialmente el daño global.
-    Los escudos y el blindaje se aplican individualmente.
-    """
     if not attackers or not defenders:
         return 0.0
 
-    attack = army_power(attackers, "attack")
-
-    variation = random.uniform(
-        1.0 - DAMAGE_VARIATION,
-        1.0 + DAMAGE_VARIATION,
+    return max(
+        0.0,
+        army_power(attackers, "attack") * float(morale),
     )
 
-    return max(0.0, attack * morale * variation)
+
+async def load_combat_research_effects(connection, realm_id):
+    rows = await connection.fetch(
+        """
+        SELECT research_type, level
+        FROM realm_research
+        WHERE realm_id = $1
+        """,
+        realm_id,
+    )
+
+    levels = {
+        row["research_type"]: int(row["level"])
+        for row in rows
+    }
+
+    return get_research_effects(levels)
 
 
-def expand_combat_units(troops):
-    """
-    Convierte las cantidades en unidades individuales.
-    Cada unidad conserva el daño acumulado en su blindaje.
-    """
+def expand_combat_units(troops, research_effects=None):
+    research_effects = research_effects or {}
+
+    attack_multiplier = 1.0 + max(
+        0.0,
+        float(research_effects.get("military_attack", 0)),
+    )
+
+    defense_multiplier = 1.0 + max(
+        0.0,
+        float(research_effects.get("military_defense", 0)),
+    )
+
     units = []
 
     for troop in troops:
         unit_type = troop["unit_type"]
         quantity = max(0, int(troop["quantity"]))
+        definition = UNITS.get(unit_type)
+
+        if not definition:
+            continue
+
+        attack = max(
+            0.0,
+            float(definition.get("attack", 0)) * attack_multiplier,
+        )
+
+        shield = max(
+            0.0,
+            float(definition.get("shield", 0)),
+        )
+
+        hull = max(
+            1.0,
+            float(definition.get("hull", 100)) * defense_multiplier,
+        )
 
         for _ in range(quantity):
             units.append({
                 "unit_type": unit_type,
+                "attack": attack,
+                "shield": shield,
+                "hull": hull,
                 "hull_damage": 0.0,
+                "destroyed": False,
             })
 
     return units
@@ -134,6 +194,9 @@ def aggregate_combat_units(units):
     quantities = {}
 
     for unit in units:
+        if unit.get("destroyed", False):
+            continue
+
         unit_type = unit["unit_type"]
         quantities[unit_type] = quantities.get(unit_type, 0) + 1
 
@@ -149,81 +212,107 @@ def aggregate_combat_units(units):
 
 def resolve_volley(shooters, targets, morale):
     """
-    Cada unidad realiza un disparo contra un objetivo aleatorio.
+    Resuelve los disparos de un bando contra el contrario.
 
-    Los escudos absorben primero el impacto y se regeneran
-    al comenzar la siguiente ronda.
-
-    El daño que supera el escudo se acumula en el blindaje.
-    A partir del 70% de daño estructural existe probabilidad
-    de destrucción, que aumenta hasta el 100%.
+    - Cada unidad dispara una vez.
+    - Los objetivos se seleccionan aleatoriamente.
+    - Los escudos absorben el daño antes que el blindaje.
+    - Los escudos se recuperan en la siguiente ronda.
+    - El daño al blindaje permanece.
+    - La explosión se comprueba después de cada impacto.
+    - Las unidades destruidas permanecen en la lista hasta
+      que termine la ronda, para no alterar la selección.
     """
+
     if not shooters or not targets:
         return 0.0, targets
 
     shield_remaining = [
-        float(
-            UNITS.get(target["unit_type"], {}).get("shield", 0)
-        )
+        max(0.0, float(target.get("shield", 0)))
         for target in targets
     ]
 
     total_damage = 0.0
+    morale = max(0.0, float(morale))
 
     for shooter in shooters:
+        if shooter.get("destroyed", False):
+            continue
+
         if not targets:
             break
 
-        definition = UNITS.get(shooter["unit_type"], {})
-        base_attack = float(definition.get("attack", 0))
-
-        if base_attack <= 0:
-            continue
-
-        variation = random.uniform(
-            1.0 - DAMAGE_VARIATION,
-            1.0 + DAMAGE_VARIATION,
+        attack = max(
+            0.0,
+            float(shooter.get("attack", 0)) * morale,
         )
 
-        shot_damage = base_attack * morale * variation
+        if attack <= 0:
+            continue
+
         target_index = random.randrange(len(targets))
         target = targets[target_index]
 
+        if target.get("destroyed", False):
+            continue
+
+        maximum_shield = max(
+            0.0,
+            float(target.get("shield", 0)),
+        )
+
+        # Regla del 1%: impactos demasiado débiles
+        # no afectan al objetivo.
+        if (
+            maximum_shield > 0
+            and attack < maximum_shield * 0.01
+        ):
+            continue
+
         absorbed = min(
             shield_remaining[target_index],
-            shot_damage,
+            attack,
         )
 
         shield_remaining[target_index] -= absorbed
 
-        hull_damage = max(0.0, shot_damage - absorbed)
+        penetrating_damage = max(
+            0.0,
+            attack - absorbed,
+        )
 
-        target["hull_damage"] += hull_damage
-        total_damage += shot_damage
+        target["hull_damage"] = (
+            float(target.get("hull_damage", 0))
+            + penetrating_damage
+        )
 
-    survivors = []
+        total_damage += attack
 
-    for target in targets:
-        definition = UNITS.get(target["unit_type"], {})
-        hull = max(1.0, float(definition.get("hull", 100)))
+        maximum_hull = max(
+            1.0,
+            float(target.get("hull", 100)),
+        )
 
-        damage_ratio = target["hull_damage"] / hull
+        remaining_hull = max(
+            0.0,
+            maximum_hull - target["hull_damage"],
+        )
 
-        if damage_ratio >= 1.0:
+        if remaining_hull <= 0:
+            target["destroyed"] = True
             continue
 
-        if damage_ratio >= 0.70:
-            destruction_chance = min(
-                1.0,
-                max(0.0, (damage_ratio - 0.70) / 0.30),
+        # Regla de explosión: por debajo del 70% de
+        # blindaje, cada impacto puede destruir la unidad.
+        if remaining_hull < maximum_hull * 0.70:
+            destruction_chance = 1.0 - (
+                remaining_hull / maximum_hull
             )
 
             if random.random() < destruction_chance:
-                continue
+                target["destroyed"] = True
 
-        survivors.append(target)
-
-    return total_damage, survivors
+    return total_damage, targets
 
 
 def resolve_battle_round(
@@ -233,21 +322,49 @@ def resolve_battle_round(
     defender_morale,
 ):
     """
-    Ambos ejércitos disparan antes de aplicar las destrucciones.
-    Así una unidad destruida durante la ronda todavía puede
-    responder en esa misma ronda.
+    Una ronda completa.
+
+    Los dos ejércitos conservan una copia de sus unidades
+    al inicio de la ronda. Por tanto, una unidad destruida
+    durante esta ronda todavía puede disparar antes de que
+    se retiren las bajas.
     """
-    attacker_damage, defenders_after = resolve_volley(
-        attackers,
+
+    attacker_shooters = [
+        dict(unit)
+        for unit in attackers
+        if not unit.get("destroyed", False)
+    ]
+
+    defender_shooters = [
+        dict(unit)
+        for unit in defenders
+        if not unit.get("destroyed", False)
+    ]
+
+    attacker_damage, _ = resolve_volley(
+        attacker_shooters,
         defenders,
         attacker_morale,
     )
 
-    defender_damage, attackers_after = resolve_volley(
-        defenders,
+    defender_damage, _ = resolve_volley(
+        defender_shooters,
         attackers,
         defender_morale,
     )
+
+    attackers_after = [
+        unit
+        for unit in attackers
+        if not unit.get("destroyed", False)
+    ]
+
+    defenders_after = [
+        unit
+        for unit in defenders
+        if not unit.get("destroyed", False)
+    ]
 
     return (
         attackers_after,
@@ -812,8 +929,31 @@ async def process_arrival(connection, mission):
     attacker_initial = army_quantity(attackers)
     defender_initial = army_quantity(defenders)
 
-    attacker_power_initial = army_power(attackers, "attack")
-    defender_power_initial = army_power(defenders, "defense")
+    attacker_research_effects = (
+        await load_combat_research_effects(
+            connection,
+            mission["attacker_realm_id"],
+        )
+    )
+
+    defender_research_effects = (
+        await load_combat_research_effects(
+            connection,
+            defender_realm_id,
+        )
+    )
+
+    attacker_power_initial = army_power(
+        attackers,
+        "attack",
+        attacker_research_effects,
+    )
+
+    defender_power_initial = army_power(
+        defenders,
+        "defense",
+        defender_research_effects,
+    )
 
     attacker_morale = initial_morale(
         attacker_initial,
@@ -828,8 +968,15 @@ async def process_arrival(connection, mission):
     round_number = 0
     round_log = []
 
-    attacker_combat_units = expand_combat_units(attackers)
-    defender_combat_units = expand_combat_units(defenders)
+    attacker_combat_units = expand_combat_units(
+        attackers,
+        attacker_research_effects,
+    )
+
+    defender_combat_units = expand_combat_units(
+        defenders,
+        defender_research_effects,
+    )
 
     logging.info(
         "MISIÓN %s: combate iniciado. A=%s D=%s",

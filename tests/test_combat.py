@@ -10,6 +10,10 @@ from bot.workers.missions import (
     initial_morale,
     update_morale,
     losses_map,
+    expand_combat_units,
+    aggregate_combat_units,
+    resolve_volley,
+    resolve_battle_round,
 )
 
 
@@ -204,6 +208,180 @@ class CombatTests(unittest.TestCase):
 
         self.assertGreaterEqual(morale, 0.25)
         self.assertLessEqual(morale, 1.25)
+
+
+    def test_research_improves_attack_and_hull(self):
+        units = expand_combat_units(
+            [{"unit_type": "spearman", "quantity": 1}],
+            {
+                "military_attack": 0.50,
+                "military_defense": 0.25,
+            },
+        )
+
+        self.assertEqual(units[0]["attack"], 12)
+        self.assertEqual(units[0]["shield"], 12)
+        self.assertEqual(units[0]["hull"], 150)
+
+    def test_aggregate_combat_units_counts_survivors(self):
+        units = [
+            {"unit_type": "spearman", "destroyed": False},
+            {"unit_type": "spearman", "destroyed": True},
+            {"unit_type": "archer", "destroyed": False},
+        ]
+
+        self.assertEqual(
+            aggregate_combat_units(units),
+            [
+                {"unit_type": "archer", "quantity": 1},
+                {"unit_type": "spearman", "quantity": 1},
+            ],
+        )
+
+    def test_shield_absorbs_damage_before_hull(self):
+        shooters = [
+            {"attack": 15, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 6,
+                "hull": 120,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            resolve_volley(shooters, targets, 1.0)
+
+        self.assertEqual(targets[0]["hull_damage"], 9)
+
+    def test_shields_regenerate_between_rounds(self):
+        shooters = [
+            {"attack": 8, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 10,
+                "hull": 120,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            resolve_volley(shooters, targets, 1.0)
+            resolve_volley(shooters, targets, 1.0)
+
+        self.assertEqual(targets[0]["hull_damage"], 0)
+
+    def test_explosion_probability_uses_remaining_hull(self):
+        shooters = [
+            {"attack": 40, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            with patch("bot.workers.missions.random.random", return_value=0.39):
+                resolve_volley(shooters, targets, 1.0)
+
+        self.assertTrue(targets[0]["destroyed"])
+
+    def test_unit_at_exactly_seventy_percent_hull_does_not_roll_explosion(self):
+        shooters = [
+            {"attack": 30, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            with patch("bot.workers.missions.random.random") as random_roll:
+                resolve_volley(shooters, targets, 1.0)
+
+        random_roll.assert_not_called()
+        self.assertFalse(targets[0]["destroyed"])
+
+    def test_both_armies_fire_before_losses_are_removed(self):
+        attackers = [
+            {
+                "unit_type": "spearman",
+                "attack": 100,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        defenders = [
+            {
+                "unit_type": "archer",
+                "attack": 100,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            result = resolve_battle_round(
+                attackers,
+                defenders,
+                1.0,
+                1.0,
+            )
+
+        attacker_survivors, defender_survivors = result[0], result[1]
+
+        self.assertEqual(attacker_survivors, [])
+        self.assertEqual(defender_survivors, [])
+
+    def test_small_battle_does_not_automatically_destroy_everyone(self):
+        attackers = expand_combat_units([
+            {"unit_type": "spearman", "quantity": 20},
+        ])
+
+        defenders = expand_combat_units([
+            {"unit_type": "royal_guard", "quantity": 5},
+        ])
+
+        with patch("bot.workers.missions.random.randrange", return_value=0):
+            with patch("bot.workers.missions.random.random", return_value=1.0):
+                attacker_survivors, defender_survivors, _, _ = (
+                    resolve_battle_round(
+                        attackers,
+                        defenders,
+                        1.0,
+                        1.0,
+                    )
+                )
+
+        self.assertGreater(
+            len(attacker_survivors) + len(defender_survivors),
+            0,
+        )
 
 
 if __name__ == "__main__":
