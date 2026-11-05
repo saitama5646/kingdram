@@ -176,6 +176,7 @@ async def send_selected_army(user_id, state, message):
         "",
         f"📏 Distancia: <b>{number(result['distance'])}</b>",
         f"⏳ Tiempo de viaje: <b>{format_seconds(result['travel_seconds'])}</b>",
+        f"🌾 Provisiones consumidas: <b>{number(result['food_cost'])}</b>",
         "",
         "Puedes consultar tus expediciones y retirar las tropas mientras viajan.",
     ])
@@ -853,6 +854,22 @@ async def battle_report_handler(callback: CallbackQuery):
                 (
                     "🛡 Daño defensor: "
                     f"{number(round(entry.get('defender_damage', 0)))}"
+                ),
+                (
+                    "   Escudos atacantes: "
+                    f"{number(round(entry.get('defender_shield_damage', 0)))}"
+                ),
+                (
+                    "   Blindaje atacante: "
+                    f"{number(round(entry.get('defender_hull_damage', 0)))}"
+                ),
+                (
+                    "   Escudos defensores: "
+                    f"{number(round(entry.get('attacker_shield_damage', 0)))}"
+                ),
+                (
+                    "   Blindaje defensor: "
+                    f"{number(round(entry.get('attacker_hull_damage', 0)))}"
                 ),
                 (
                     "💀 Bajas atacante: "

@@ -1,3 +1,5 @@
+from math import ceil
+
 from bot.database.connection import get_pool
 from bot.services.military import UNITS
 from bot.services.world import (
@@ -53,7 +55,6 @@ async def create_mission(
                 SELECT id, name, continent, region, position
                 FROM realms
                 WHERE owner_id = $1
-                FOR UPDATE
                 """,
                 user_id,
             )
@@ -64,12 +65,34 @@ async def create_mission(
             if attacker["id"] == defender_realm_id:
                 return False, "No puedes atacar tu propio reino."
 
+            # Bloquear ambos reinos siempre por ID ascendente.
+            # Así se evita el interbloqueo cuando dos jugadores
+            # intentan atacarse simultáneamente.
+            await connection.fetch(
+                """
+                SELECT id
+                FROM realms
+                WHERE id = ANY($1::BIGINT[])
+                ORDER BY id
+                FOR UPDATE
+                """,
+                [attacker["id"], defender_realm_id],
+            )
+
+            attacker = await connection.fetchrow(
+                """
+                SELECT id, name, continent, region, position
+                FROM realms
+                WHERE id = $1
+                """,
+                attacker["id"],
+            )
+
             defender = await connection.fetchrow(
                 """
                 SELECT id, name, continent, region, position
                 FROM realms
                 WHERE id = $1
-                FOR UPDATE
                 """,
                 defender_realm_id,
             )
@@ -208,6 +231,49 @@ async def create_mission(
                 speed,
             )
 
+            # Consumo diario de campaña proporcional al tiempo de viaje.
+            food_cost = ceil(
+                sum(
+                    quantity
+                    * float(UNITS[unit_type]["food"])
+                    * travel_seconds
+                    / 86400
+                    for unit_type, quantity in selected.items()
+                    if quantity > 0
+                )
+            )
+
+            resources = await connection.fetchrow(
+                """
+                SELECT food
+                FROM resources
+                WHERE realm_id = $1
+                FOR UPDATE
+                """,
+                attacker["id"],
+            )
+
+            if not resources:
+                return False, "No se encontraron los recursos del reino."
+
+            if int(resources["food"]) < food_cost:
+                return False, (
+                    "No tienes suficientes alimentos para abastecer "
+                    "esta expedición.\n"
+                    f"Necesitas: {food_cost:,}\n"
+                    f"Disponibles: {int(resources['food']):,}"
+                )
+
+            await connection.execute(
+                """
+                UPDATE resources
+                SET food = food - $1
+                WHERE realm_id = $2
+                """,
+                food_cost,
+                attacker["id"],
+            )
+
             mission = await connection.fetchrow(
                 """
                 INSERT INTO military_missions (
@@ -294,6 +360,7 @@ async def create_mission(
                 "defender_name": defender["name"],
                 "distance": distance,
                 "travel_seconds": travel_seconds,
+                "food_cost": food_cost,
                 "arrival_at": mission["arrival_at"],
                 "troops": selected,
             }
@@ -313,13 +380,18 @@ async def recall_mission(user_id, mission_id):
                 JOIN realms r
                   ON r.id = m.attacker_realm_id
                 WHERE m.id = $1
+                  AND m.status = 'travelling'
+                  AND m.arrival_at > NOW()
                 FOR UPDATE
                 """,
                 mission_id,
             )
 
             if not mission:
-                return False, "La misión no existe."
+                return False, (
+                    "La misión no existe o ya ha llegado "
+                    "a su destino."
+                )
 
             if mission["owner_id"] != user_id:
                 return False, "Esta misión no te pertenece."

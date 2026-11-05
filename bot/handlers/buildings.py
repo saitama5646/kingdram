@@ -385,6 +385,21 @@ async def building_detail_handler(callback: CallbackQuery):
         "",
         f"Nivel actual: <b>{level}</b>",
         f"Nivel objetivo: <b>{next_level}</b>",
+        *(
+            [
+                "",
+                "📦 <b>CAPACIDAD ADICIONAL</b>",
+                "Por este nivel: <b>+10.000</b> madera, piedra y oro.",
+            ]
+            if building_type == "warehouse"
+            else [
+                "",
+                "📦 <b>CAPACIDAD ADICIONAL</b>",
+                "Por este nivel: <b>+15.000</b> alimentos.",
+            ]
+            if building_type == "granary"
+            else []
+        ),
         "",
         "💰 <b>RECURSOS DISPONIBLES</b>",
         *available_lines,
