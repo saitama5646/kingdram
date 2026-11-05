@@ -254,43 +254,77 @@ async def damage_infrastructure(
     if before <= 0 or target_damage <= 0:
         return before, before, 0.0, infrastructure_log
 
+    target_damage = max(
+        0.0,
+        min(float(target_damage), MAX_INFRASTRUCTURE_DAMAGE),
+    )
+
     target_value = int(before * target_damage)
-    destroyed_value = 0
+    remaining_target = target_value
+
+    planned_levels = {
+        int(building["id"]): int(building["level"])
+        for building in buildings
+    }
+
+    building_values = {}
 
     for building in buildings:
-        if destroyed_value >= target_value:
-            break
-
-        building_type = building["building_type"]
-        original_level = int(building["level"])
-        level = original_level
-
-        definition = BUILDINGS.get(building_type)
+        definition = BUILDINGS.get(building["building_type"])
 
         if not definition:
             continue
 
-        base_value = sum(
+        building_values[int(building["id"])] = sum(
             int(amount)
             for amount in definition["base_cost"].values()
         )
 
-        while level > 0 and destroyed_value < target_value:
+    # Destruye niveles sin superar el presupuesto de daño.
+    while remaining_target > 0:
+        candidates = []
+
+        for building in buildings:
+            building_id = int(building["id"])
+            level = planned_levels[building_id]
+            base_value = building_values.get(building_id, 0)
+
+            if level <= 0 or base_value <= 0:
+                continue
+
             level_value = ceil(
-                base_value
-                * (BUILDING_COST_GROWTH ** (level - 1))
+                base_value * (BUILDING_COST_GROWTH ** (level - 1))
             )
 
-            destroyed_value += level_value
-            level -= 1
+            if level_value <= remaining_target:
+                candidates.append((level_value, building_id))
 
-        if level <= 0:
+        if not candidates:
+            break
+
+        level_value, building_id = max(
+            candidates,
+            key=lambda item: (item[0], -item[1]),
+        )
+
+        planned_levels[building_id] -= 1
+        remaining_target -= level_value
+
+    for building in buildings:
+        building_id = int(building["id"])
+        original_level = int(building["level"])
+        new_level = planned_levels[building_id]
+
+        if new_level == original_level:
+            continue
+
+        if new_level <= 0:
             await connection.execute(
                 """
                 DELETE FROM buildings
                 WHERE id = $1
                 """,
-                building["id"],
+                building_id,
             )
         else:
             await connection.execute(
@@ -299,17 +333,16 @@ async def damage_infrastructure(
                 SET level = $1
                 WHERE id = $2
                 """,
-                level,
-                building["id"],
+                new_level,
+                building_id,
             )
 
-        if level < original_level:
-            infrastructure_log.append({
-                "building_type": building_type,
-                "old_level": original_level,
-                "new_level": max(0, level),
-                "destroyed_levels": original_level - max(0, level),
-            })
+        infrastructure_log.append({
+            "building_type": building["building_type"],
+            "old_level": original_level,
+            "new_level": new_level,
+            "destroyed_levels": original_level - new_level,
+        })
 
     remaining_buildings = await connection.fetch(
         """
@@ -331,7 +364,7 @@ async def damage_infrastructure(
     return (
         before,
         after,
-        min(1.0, actual_damage),
+        min(MAX_INFRASTRUCTURE_DAMAGE, actual_damage),
         infrastructure_log,
     )
 
