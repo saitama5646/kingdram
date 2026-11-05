@@ -94,6 +94,53 @@ async def create_mission(
                     "No puedes atacar a tu propio vasallo."
                 )
 
+            # PACTO DE NO AGRESION ENTRE ALIANZAS
+            non_aggression = await connection.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM alliance_members attacker_member
+                    JOIN alliance_members defender_member
+                      ON defender_member.player_id = $2
+                    JOIN alliance_treaties treaty
+                      ON treaty.status = 'active'
+                     AND treaty.treaty_type = 'non_aggression'
+                     AND (
+                         (
+                             treaty.alliance_id =
+                                 attacker_member.alliance_id
+                             AND treaty.other_alliance_id =
+                                 defender_member.alliance_id
+                         )
+                         OR
+                         (
+                             treaty.alliance_id =
+                                 defender_member.alliance_id
+                             AND treaty.other_alliance_id =
+                                 attacker_member.alliance_id
+                         )
+                     )
+                    WHERE attacker_member.player_id = $1
+                )
+                """,
+                user_id,
+                await connection.fetchval(
+                    """
+                    SELECT owner_id
+                    FROM realms
+                    WHERE id = $1
+                    """,
+                    defender_realm_id,
+                ),
+            )
+
+            if non_aggression:
+                return False, (
+                    "No puedes atacar a este reino: "
+                    "tu alianza mantiene un pacto de "
+                    "no agresión vigente con su alianza."
+                )
+
             available_rows = await connection.fetch(
                 """
                 SELECT unit_type, quantity
