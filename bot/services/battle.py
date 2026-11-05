@@ -548,31 +548,6 @@ async def resolve_battle(user_id, defender_realm_id):
                     result["remaining"],
                 )
 
-            if vassalage_unlocked:
-                await connection.execute(
-                    """
-                    INSERT INTO vassalage_requests (
-                        lord_realm_id,
-                        vassal_realm_id,
-                        destruction_ratio,
-                        status
-                    )
-                    SELECT $1, $2, $3, 'pending'
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM vassalage_relations
-                        WHERE vassal_realm_id = $2
-                          AND status = 'active'
-                    )
-                    ON CONFLICT (vassal_realm_id)
-                    WHERE status = 'pending'
-                    DO NOTHING
-                    """,
-                    attacker["id"],
-                    defender_realm_id,
-                    infrastructure_damage,
-                )
-
             return True, {
                 "battle_id": report["id"],
                 "attacker_name": attacker["name"],

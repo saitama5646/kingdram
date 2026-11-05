@@ -32,10 +32,6 @@ ON vassalage_requests(vassal_realm_id, status);
 -- ---------------------------------------------------------
 
 ALTER TABLE vassalage_relations
-ADD COLUMN IF NOT EXISTS tribute_rate NUMERIC(5,4)
-NOT NULL DEFAULT 0.20;
-
-ALTER TABLE vassalage_relations
 ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;
 
 ALTER TABLE vassalage_relations
@@ -64,38 +60,8 @@ WHERE status = 'active';
 -- ---------------------------------------------------------
 
 ALTER TABLE vassalage_tribute_log
-ADD COLUMN IF NOT EXISTS relation_id BIGINT;
-
-ALTER TABLE vassalage_tribute_log
 ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ
 NOT NULL DEFAULT NOW();
-
--- Vincula los registros antiguos cuando sea posible.
-UPDATE vassalage_tribute_log AS log
-SET relation_id = relation.id
-FROM vassalage_relations AS relation
-WHERE log.relation_id IS NULL
-  AND log.lord_realm_id = relation.lord_realm_id
-  AND log.vassal_realm_id = relation.vassal_realm_id;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'fk_kingdram_tribute_relation'
-    ) THEN
-        ALTER TABLE vassalage_tribute_log
-        ADD CONSTRAINT fk_kingdram_tribute_relation
-        FOREIGN KEY (relation_id)
-        REFERENCES vassalage_relations(id)
-        ON DELETE SET NULL;
-    END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS
-idx_kingdram_tribute_relation
-ON vassalage_tribute_log(relation_id);
 
 
 -- ---------------------------------------------------------

@@ -82,12 +82,22 @@ ALTER TABLE vassalage_relations
 ADD COLUMN IF NOT EXISTS tribute_rate NUMERIC(5,4)
 NOT NULL DEFAULT 0.20;
 
-ALTER TABLE vassalage_relations
-ADD CONSTRAINT chk_vassalage_tribute_rate
-CHECK (
-    tribute_rate >= 0
-    AND tribute_rate <= 1
-);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_vassalage_tribute_rate'
+          AND conrelid = 'vassalage_relations'::regclass
+    ) THEN
+        ALTER TABLE vassalage_relations
+        ADD CONSTRAINT chk_vassalage_tribute_rate
+        CHECK (
+            tribute_rate >= 0
+            AND tribute_rate <= 1
+        );
+    END IF;
+END $$;
 
 -- Relacionar cada registro de tributo con su vasallaje.
 ALTER TABLE vassalage_tribute_log
