@@ -90,7 +90,7 @@ async def main():
                 name="kingdram-research",
             ),
             asyncio.create_task(
-                missions_worker(bot),
+                missions_worker(),
                 name="kingdram-missions",
             ),
             asyncio.create_task(
