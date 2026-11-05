@@ -365,38 +365,32 @@ async def render_territory(
         "",
     ]
 
-    for position in range(
-        1,
-        POSITIONS_PER_TERRITORY + 1,
-    ):
-        target = occupied.get(position)
+    for position, target in sorted(occupied.items()):
+        realm_name = escape(
+            target["name"] or "Reino sin nombre"
+        )
 
-        if target:
-            realm_name = escape(
-                target["name"] or "Reino sin nombre"
-            )
+        player_name = escape(
+            target["first_name"]
+            or target["username"]
+            or "Jugador"
+        )
 
-            player_name = escape(
-                target["first_name"]
-                or target["username"]
-                or "Jugador"
-            )
+        lines.append(
+            f"<b>{position:02d}</b> — 🏰 "
+            f"<b>{realm_name}</b>"
+        )
 
-            lines.append(
-                f"<b>{position:02d}</b> — 🏰 "
-                f"<b>{realm_name}</b>"
-            )
+        lines.append(
+            f"     👑 {player_name}"
+        )
 
-            lines.append(
-                f"     👑 {player_name}"
-            )
+        lines.append("")
 
-        else:
-            lines.append(
-                f"<b>{position:02d}</b> — 🟢 "
-                "<i>Posición libre</i>"
-            )
-
+    if not occupied:
+        lines.append(
+            "<i>Este territorio todavía no tiene reinos.</i>"
+        )
         lines.append("")
 
     lines.extend([
