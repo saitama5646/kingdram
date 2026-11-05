@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import logging
@@ -20,10 +19,7 @@ MORALE_ADVANTAGE_FACTOR = 0.10
 
 
 def army_quantity(troops):
-    return sum(
-        max(0, int(t["quantity"]))
-        for t in troops
-    )
+    return sum(max(0, int(t["quantity"])) for t in troops)
 
 
 def army_power(troops, stat):
@@ -62,10 +58,7 @@ def initial_morale(own, enemy):
         else:
             bonus = 0.0
 
-    return max(
-        MIN_MORALE,
-        min(MAX_MORALE, 1.0 + bonus),
-    )
+    return max(MIN_MORALE, min(MAX_MORALE, 1.0 + bonus))
 
 
 def update_morale(
@@ -75,17 +68,8 @@ def update_morale(
     enemy_losses,
     enemy_before,
 ):
-    own_ratio = (
-        own_losses / own_before
-        if own_before > 0
-        else 1.0
-    )
-
-    enemy_ratio = (
-        enemy_losses / enemy_before
-        if enemy_before > 0
-        else 0.0
-    )
+    own_ratio = own_losses / own_before if own_before else 0.0
+    enemy_ratio = enemy_losses / enemy_before if enemy_before else 0.0
 
     change = (
         -own_ratio * MORALE_LOSS_FACTOR
@@ -106,14 +90,8 @@ def calculate_damage(attackers, defenders, morale):
     if attack <= 0 or count <= 0:
         return 0.0
 
-    defense_per_unit = max(
-        1.0,
-        defense / count,
-    )
-
-    mitigation = 100.0 / (
-        100.0 + defense_per_unit * 2.0
-    )
+    defense_per_unit = max(1.0, defense / count)
+    mitigation = 100.0 / (100.0 + defense_per_unit * 2.0)
 
     variation = random.uniform(
         1.0 - DAMAGE_VARIATION,
@@ -124,64 +102,65 @@ def calculate_damage(attackers, defenders, morale):
 
 
 def calculate_losses(troops, damage):
-    count = army_quantity(troops)
+    total_units = army_quantity(troops)
 
-    if count <= 0 or damage <= 0:
+    if total_units <= 0 or damage <= 0:
         return {}
 
     defense = army_power(troops, "defense")
+    defense_per_unit = max(1.0, defense / total_units)
 
-    defense_per_unit = max(
-        1.0,
-        defense / count,
+    # El daño determina las bajas. No se fuerza una baja
+    # por ronda: un ataque débil puede no causar pérdidas.
+    losses_total = int(
+        damage / max(1.0, defense_per_unit * 0.25)
     )
 
-    # FIX: el daño ahora provoca bajas incluso
-    # cuando la fuerza es pequeña.
-    losses_total = max(
-        1,
-        int(damage / max(1.0, defense_per_unit * 0.25)),
-    )
+    losses_total = min(total_units, max(0, losses_total))
 
-    losses_total = min(count, losses_total)
+    if losses_total <= 0:
+        return {}
 
     distribution = []
 
     for troop in troops:
-        quantity = int(troop["quantity"])
+        quantity = max(0, int(troop["quantity"]))
 
         if quantity <= 0:
             continue
 
-        exact = losses_total * quantity / count
-        losses = int(exact)
+        exact = losses_total * quantity / total_units
+        base_losses = min(quantity, int(exact))
 
         distribution.append({
             "unit_type": troop["unit_type"],
             "quantity": quantity,
-            "losses": losses,
-            "remainder": exact - losses,
+            "losses": base_losses,
+            "remainder": exact - base_losses,
         })
 
-    allocated = sum(
-        item["losses"]
-        for item in distribution
-    )
-
-    left = losses_total - allocated
+    allocated = sum(item["losses"] for item in distribution)
+    remaining = losses_total - allocated
 
     distribution.sort(
         key=lambda item: item["remainder"],
         reverse=True,
     )
 
-    for item in distribution:
-        if left <= 0:
-            break
+    while remaining > 0:
+        changed = False
 
-        if item["losses"] < item["quantity"]:
-            item["losses"] += 1
-            left -= 1
+        for item in distribution:
+            if remaining <= 0:
+                break
+
+            if item["losses"] < item["quantity"]:
+                item["losses"] += 1
+                remaining -= 1
+                changed = True
+
+        if not changed:
+            break
 
     return {
         item["unit_type"]: item["losses"]
@@ -191,7 +170,7 @@ def calculate_losses(troops, damage):
 
 
 def apply_losses(troops, losses):
-    result = []
+    survivors = []
 
     for troop in troops:
         unit_type = troop["unit_type"]
@@ -202,25 +181,25 @@ def apply_losses(troops, losses):
             - int(losses.get(unit_type, 0)),
         )
 
-        if remaining > 0:
-            result.append({
+        if remaining:
+            survivors.append({
                 "unit_type": unit_type,
                 "quantity": remaining,
             })
 
-    return result
+    return survivors
 
 
 def losses_map(original, survivors):
     remaining = survivor_map(survivors)
 
     return {
-        t["unit_type"]: max(
+        troop["unit_type"]: max(
             0,
-            int(t["quantity"])
-            - remaining.get(t["unit_type"], 0),
+            int(troop["quantity"])
+            - remaining.get(troop["unit_type"], 0),
         )
-        for t in original
+        for troop in original
     }
 
 
@@ -318,24 +297,24 @@ async def save_report(
     attacker_owner = owner_map[attacker_realm_id]
     defender_owner = owner_map[defender_realm_id]
 
+    attacker_remaining_power = army_power(attackers, "attack")
+    defender_remaining_power = army_power(defenders, "attack")
+
     if attackers and not defenders:
         outcome = "attacker_victory"
         winner = attacker_realm_id
-
     elif defenders and not attackers:
         outcome = "defender_victory"
         winner = defender_realm_id
-
     elif attackers and defenders:
         outcome = "inconclusive"
 
-        winner = (
-            attacker_realm_id
-            if army_power(attackers, "attack")
-            > army_power(defenders, "attack")
-            else defender_realm_id
-        )
-
+        if attacker_remaining_power > defender_remaining_power:
+            winner = attacker_realm_id
+        elif defender_remaining_power > attacker_remaining_power:
+            winner = defender_realm_id
+        else:
+            winner = defender_realm_id
     else:
         outcome = "mutual_destruction"
         winner = defender_realm_id
@@ -381,15 +360,8 @@ async def save_report(
         json.dumps(round_log),
     )
 
-    attacker_lost = losses_map(
-        attacker_original,
-        attackers,
-    )
-
-    defender_lost = losses_map(
-        defender_original,
-        defenders,
-    )
+    attacker_lost = losses_map(attacker_original, attackers)
+    defender_lost = losses_map(defender_original, defenders)
 
     attacker_remaining = survivor_map(attackers)
     defender_remaining = survivor_map(defenders)
@@ -485,26 +457,14 @@ async def process_arrival(connection, mission):
         for row in defender_rows
     ]
 
-    attacker_original = [
-        dict(t) for t in attackers
-    ]
-
-    defender_original = [
-        dict(t) for t in defenders
-    ]
+    attacker_original = [dict(troop) for troop in attackers]
+    defender_original = [dict(troop) for troop in defenders]
 
     attacker_initial = army_quantity(attackers)
     defender_initial = army_quantity(defenders)
 
-    attacker_power_initial = army_power(
-        attackers,
-        "attack",
-    )
-
-    defender_power_initial = army_power(
-        defenders,
-        "attack",
-    )
+    attacker_power_initial = army_power(attackers, "attack")
+    defender_power_initial = army_power(defenders, "attack")
 
     attacker_morale = initial_morale(
         attacker_initial,
@@ -520,14 +480,12 @@ async def process_arrival(connection, mission):
     round_log = []
 
     logging.info(
-        "MISIÓN %s: inicia combate. Atacantes=%s Defensores=%s",
+        "MISIÓN %s: combate iniciado. A=%s D=%s",
         mission_id,
         attacker_initial,
         defender_initial,
     )
 
-    # Si el reino defensor no tiene ejército,
-    # las tropas atacantes ocupan el objetivo sin bajas.
     while (
         attackers
         and defenders
@@ -560,13 +518,8 @@ async def process_arrival(connection, mission):
             attacker_damage,
         )
 
-        attacker_losses = sum(
-            attacker_losses_map.values()
-        )
-
-        defender_losses = sum(
-            defender_losses_map.values()
-        )
+        attacker_losses = sum(attacker_losses_map.values())
+        defender_losses = sum(defender_losses_map.values())
 
         attacker_morale = update_morale(
             attacker_morale,
@@ -596,6 +549,8 @@ async def process_arrival(connection, mission):
 
         round_log.append({
             "round": round_number,
+            "attacker_damage": round(attacker_damage, 2),
+            "defender_damage": round(defender_damage, 2),
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
             "attacker_remaining": army_quantity(attackers),
@@ -605,11 +560,7 @@ async def process_arrival(connection, mission):
         })
 
         logging.info(
-            (
-                "MISIÓN %s | RONDA %s | "
-                "Pérdidas A=%s D=%s | "
-                "Moral A=%.2f D=%.2f"
-            ),
+            "MISIÓN %s | RONDA %s | Bajas A=%s D=%s | Moral A=%.2f D=%.2f",
             mission_id,
             round_number,
             attacker_losses,
@@ -674,8 +625,7 @@ async def process_arrival(connection, mission):
         UPDATE military_missions
         SET status = 'returning',
             mission_type = 'return',
-            arrival_at =
-                NOW() + $1 * INTERVAL '1 second'
+            arrival_at = NOW() + $1 * INTERVAL '1 second'
         WHERE id = $2
         """,
         return_seconds,
@@ -693,7 +643,7 @@ async def missions_worker():
             async with pool.acquire() as connection:
                 arriving = await connection.fetch(
                     """
-                    SELECT *
+                    SELECT id
                     FROM military_missions
                     WHERE status = 'travelling'
                       AND mission_type = 'attack'
@@ -703,9 +653,9 @@ async def missions_worker():
                     """
                 )
 
-                for mission in arriving:
+                for item in arriving:
                     async with connection.transaction():
-                        locked = await connection.fetchrow(
+                        mission = await connection.fetchrow(
                             """
                             SELECT *
                             FROM military_missions
@@ -714,13 +664,13 @@ async def missions_worker():
                               AND mission_type = 'attack'
                             FOR UPDATE
                             """,
-                            mission["id"],
+                            item["id"],
                         )
 
-                        if locked:
+                        if mission:
                             await process_arrival(
                                 connection,
-                                locked,
+                                mission,
                             )
 
                 returning = await connection.fetch(
