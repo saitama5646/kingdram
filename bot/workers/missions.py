@@ -33,21 +33,17 @@ def army_quantity(troops):
 def army_power(troops, stat, research_effects=None):
     research_effects = research_effects or {}
 
-    effect_name = (
-        "military_attack"
-        if stat == "attack"
-        else "military_defense"
-        if stat == "defense"
-        else None
-    )
-
-    multiplier = 1.0
-
-    if effect_name:
-        multiplier += max(
-            0.0,
-            float(research_effects.get(effect_name, 0)),
+    if stat == "attack":
+        bonus = float(research_effects.get("military_attack", 0))
+    elif stat == "defense":
+        bonus = max(
+            float(research_effects.get("military_hull", 0)),
+            float(research_effects.get("military_defense", 0)),
         )
+    else:
+        bonus = 0.0
+
+    multiplier = 1.0 + max(0.0, bonus)
 
     return sum(
         max(0, int(troop["quantity"]))
@@ -55,7 +51,6 @@ def army_power(troops, stat, research_effects=None):
         * multiplier
         for troop in troops
     )
-
 
 def survivor_map(troops):
     return {
@@ -218,18 +213,7 @@ def aggregate_combat_units(units):
 
 
 def resolve_volley(shooters, targets, morale):
-    """
-    Resuelve los disparos de un bando contra el contrario.
-
-    - Cada unidad dispara una vez.
-    - Los objetivos se seleccionan aleatoriamente.
-    - Los escudos absorben el daño antes que el blindaje.
-    - Los escudos se recuperan en la siguiente ronda.
-    - El daño al blindaje permanece.
-    - La explosión se comprueba después de cada impacto.
-    - Las unidades destruidas permanecen en la lista hasta
-      que termine la ronda, para no alterar la selección.
-    """
+    """Resuelve una descarga contra objetivos vivos."""
 
     if not shooters or not targets:
         return 0.0, targets
@@ -239,6 +223,10 @@ def resolve_volley(shooters, targets, morale):
         for target in targets
     ]
 
+    for target in targets:
+        target.setdefault("round_shield_damage", 0.0)
+        target.setdefault("round_hull_damage", 0.0)
+
     total_damage = 0.0
     morale = max(0.0, float(morale))
 
@@ -246,30 +234,39 @@ def resolve_volley(shooters, targets, morale):
         if shooter.get("destroyed", False):
             continue
 
-        if not targets:
+        living_indices = [
+            index
+            for index, target in enumerate(targets)
+            if not target.get("destroyed", False)
+        ]
+
+        if not living_indices:
             break
 
-        attack = max(
+        base_attack = max(
             0.0,
             float(shooter.get("attack", 0)) * morale,
         )
 
-        if attack <= 0:
+        if base_attack <= 0:
             continue
 
-        target_index = random.randrange(len(targets))
+        attack = base_attack * random.uniform(
+            1.0 - DAMAGE_VARIATION,
+            1.0 + DAMAGE_VARIATION,
+        )
+
+        target_index = living_indices[
+            random.randrange(len(living_indices))
+        ]
+
         target = targets[target_index]
-
-        if target.get("destroyed", False):
-            continue
 
         maximum_shield = max(
             0.0,
             float(target.get("shield", 0)),
         )
 
-        # Regla del 1%: impactos demasiado débiles
-        # no afectan al objetivo.
         if (
             maximum_shield > 0
             and attack < maximum_shield * 0.01
@@ -282,6 +279,7 @@ def resolve_volley(shooters, targets, morale):
         )
 
         shield_remaining[target_index] -= absorbed
+        target["round_shield_damage"] += absorbed
 
         penetrating_damage = max(
             0.0,
@@ -293,6 +291,7 @@ def resolve_volley(shooters, targets, morale):
             + penetrating_damage
         )
 
+        target["round_hull_damage"] += penetrating_damage
         total_damage += attack
 
         maximum_hull = max(
@@ -309,11 +308,9 @@ def resolve_volley(shooters, targets, morale):
             target["destroyed"] = True
             continue
 
-        # Regla de explosión: por debajo del 70% de
-        # blindaje, cada impacto puede destruir la unidad.
         if remaining_hull < maximum_hull * 0.70:
-            destruction_chance = 1.0 - (
-                remaining_hull / maximum_hull
+            destruction_chance = (
+                1.0 - remaining_hull / maximum_hull
             )
 
             if random.random() < destruction_chance:
@@ -321,21 +318,17 @@ def resolve_volley(shooters, targets, morale):
 
     return total_damage, targets
 
-
-def resolve_battle_round(
+def resolve_battle_round_detailed(
     attackers,
     defenders,
     attacker_morale,
     defender_morale,
 ):
-    """
-    Una ronda completa.
+    """Ambos bandos disparan con las unidades vivas al inicio."""
 
-    Los dos ejércitos conservan una copia de sus unidades
-    al inicio de la ronda. Por tanto, una unidad destruida
-    durante esta ronda todavía puede disparar antes de que
-    se retiren las bajas.
-    """
+    for unit in attackers + defenders:
+        unit["round_shield_damage"] = 0.0
+        unit["round_hull_damage"] = 0.0
 
     attacker_shooters = [
         dict(unit)
@@ -361,15 +354,32 @@ def resolve_battle_round(
         defender_morale,
     )
 
+    details = {
+        "attacker_shield_damage": sum(
+            float(unit.get("round_shield_damage", 0))
+            for unit in attackers
+        ),
+        "attacker_hull_damage": sum(
+            float(unit.get("round_hull_damage", 0))
+            for unit in attackers
+        ),
+        "defender_shield_damage": sum(
+            float(unit.get("round_shield_damage", 0))
+            for unit in defenders
+        ),
+        "defender_hull_damage": sum(
+            float(unit.get("round_hull_damage", 0))
+            for unit in defenders
+        ),
+    }
+
     attackers_after = [
-        unit
-        for unit in attackers
+        unit for unit in attackers
         if not unit.get("destroyed", False)
     ]
 
     defenders_after = [
-        unit
-        for unit in defenders
+        unit for unit in defenders
         if not unit.get("destroyed", False)
     ]
 
@@ -378,8 +388,24 @@ def resolve_battle_round(
         defenders_after,
         attacker_damage,
         defender_damage,
+        details,
     )
 
+
+def resolve_battle_round(
+    attackers,
+    defenders,
+    attacker_morale,
+    defender_morale,
+):
+    result = resolve_battle_round_detailed(
+        attackers,
+        defenders,
+        attacker_morale,
+        defender_morale,
+    )
+
+    return result[:4]
 
 def calculate_losses(troops, damage):
     total_units = army_quantity(troops)
@@ -505,11 +531,7 @@ def infrastructure_value(buildings):
     return total
 
 
-async def damage_infrastructure(
-    connection,
-    realm_id,
-    target_damage,
-):
+async def damage_infrastructure(connection, realm_id, target_damage):
     buildings = await connection.fetch(
         """
         SELECT id, building_type, level
@@ -532,8 +554,8 @@ async def damage_infrastructure(
         min(float(target_damage), MAX_INFRASTRUCTURE_DAMAGE),
     )
 
-    target_value = int(before * target_damage)
-    remaining_target = target_value
+    target_budget = int(before * target_damage)
+    hard_limit = int(before * MAX_INFRASTRUCTURE_DAMAGE)
 
     planned_levels = {
         int(building["id"]): int(building["level"])
@@ -545,16 +567,15 @@ async def damage_infrastructure(
     for building in buildings:
         definition = BUILDINGS.get(building["building_type"])
 
-        if not definition:
-            continue
+        if definition:
+            building_values[int(building["id"])] = sum(
+                int(amount)
+                for amount in definition["base_cost"].values()
+            )
 
-        building_values[int(building["id"])] = sum(
-            int(amount)
-            for amount in definition["base_cost"].values()
-        )
+    damage_planned = 0
 
-    # Destruye niveles sin superar el presupuesto de daño.
-    while remaining_target > 0:
+    while target_budget > 0:
         candidates = []
 
         for building in buildings:
@@ -569,34 +590,59 @@ async def damage_infrastructure(
                 base_value * (BUILDING_COST_GROWTH ** (level - 1))
             )
 
-            if level_value <= remaining_target:
+            if (
+                level_value <= target_budget
+                and damage_planned + level_value <= hard_limit
+            ):
                 candidates.append((level_value, building_id))
 
-        if not candidates:
-            break
+        if candidates:
+            level_value, building_id = max(
+                candidates,
+                key=lambda item: (item[0], -item[1]),
+            )
 
-        level_value, building_id = max(
-            candidates,
-            key=lambda item: (item[0], -item[1]),
-        )
+            planned_levels[building_id] -= 1
+            target_budget -= level_value
+            damage_planned += level_value
+            continue
 
-        planned_levels[building_id] -= 1
-        remaining_target -= level_value
+        if damage_planned == 0:
+            fallback = []
+
+            for building in buildings:
+                building_id = int(building["id"])
+                level = planned_levels[building_id]
+                base_value = building_values.get(building_id, 0)
+
+                if level <= 0 or base_value <= 0:
+                    continue
+
+                level_value = ceil(
+                    base_value * (BUILDING_COST_GROWTH ** (level - 1))
+                )
+
+                if level_value <= hard_limit:
+                    fallback.append((level_value, building_id))
+
+            if fallback:
+                level_value, building_id = min(fallback)
+                planned_levels[building_id] -= 1
+                damage_planned += level_value
+
+        break
 
     for building in buildings:
         building_id = int(building["id"])
-        original_level = int(building["level"])
+        old_level = int(building["level"])
         new_level = planned_levels[building_id]
 
-        if new_level == original_level:
+        if new_level == old_level:
             continue
 
         if new_level <= 0:
             await connection.execute(
-                """
-                DELETE FROM buildings
-                WHERE id = $1
-                """,
+                "DELETE FROM buildings WHERE id = $1",
                 building_id,
             )
         else:
@@ -612,9 +658,9 @@ async def damage_infrastructure(
 
         infrastructure_log.append({
             "building_type": building["building_type"],
-            "old_level": original_level,
+            "old_level": old_level,
             "new_level": new_level,
-            "destroyed_levels": original_level - new_level,
+            "destroyed_levels": old_level - new_level,
         })
 
     remaining_buildings = await connection.fetch(
@@ -634,13 +680,12 @@ async def damage_infrastructure(
         else 0.0
     )
 
-    return (
-        before,
-        after,
-        min(MAX_INFRASTRUCTURE_DAMAGE, actual_damage),
-        infrastructure_log,
-    )
+    if actual_damage > MAX_INFRASTRUCTURE_DAMAGE + 1e-9:
+        raise RuntimeError(
+            "El daño a infraestructura superó el límite del 65 %."
+        )
 
+    return before, after, actual_damage, infrastructure_log
 
 async def save_attacker_survivors(
     connection,
@@ -1007,7 +1052,8 @@ async def process_arrival(connection, mission):
             defender_combat_units,
             attacker_damage,
             defender_damage,
-        ) = resolve_battle_round(
+            damage_details,
+        ) = resolve_battle_round_detailed(
             attacker_combat_units,
             defender_combat_units,
             attacker_morale,
@@ -1044,6 +1090,10 @@ async def process_arrival(connection, mission):
             "round": round_number,
             "attacker_damage": round(attacker_damage, 2),
             "defender_damage": round(defender_damage, 2),
+            **{
+                key: round(value, 2)
+                for key, value in damage_details.items()
+            },
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
             "attacker_remaining": len(attacker_combat_units),
