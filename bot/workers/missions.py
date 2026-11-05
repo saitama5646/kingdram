@@ -1,11 +1,14 @@
+
 import asyncio
 import json
 import logging
 import random
+from math import ceil
 
 from bot.database.connection import get_pool
 from bot.services.missions import finish_returning_mission
 from bot.services.military import UNITS
+from bot.services.construction import BUILDINGS
 
 
 MAX_BATTLE_ROUNDS = 6
@@ -16,6 +19,10 @@ MAX_MORALE = 1.25
 
 MORALE_LOSS_FACTOR = 0.45
 MORALE_ADVANTAGE_FACTOR = 0.10
+
+BUILDING_COST_GROWTH = 1.65
+MAX_INFRASTRUCTURE_DAMAGE = 0.65
+MIN_DAMAGE_FOR_VASSALAGE = 0.50
 
 
 def army_quantity(troops):
@@ -201,6 +208,119 @@ def losses_map(original, survivors):
     }
 
 
+def infrastructure_value(buildings):
+    total = 0
+
+    for building in buildings:
+        definition = BUILDINGS.get(building["building_type"])
+        level = int(building["level"])
+
+        if not definition or level <= 0:
+            continue
+
+        base_value = sum(
+            int(amount)
+            for amount in definition["base_cost"].values()
+        )
+
+        for current_level in range(1, level + 1):
+            total += ceil(
+                base_value
+                * (BUILDING_COST_GROWTH ** (current_level - 1))
+            )
+
+    return total
+
+
+async def damage_infrastructure(
+    connection,
+    realm_id,
+    target_damage,
+):
+    buildings = await connection.fetch(
+        """
+        SELECT id, building_type, level
+        FROM buildings
+        WHERE realm_id = $1
+        ORDER BY level DESC, id
+        FOR UPDATE
+        """,
+        realm_id,
+    )
+
+    before = infrastructure_value(buildings)
+
+    if before <= 0 or target_damage <= 0:
+        return before, before, 0.0
+
+    target_value = int(before * target_damage)
+    destroyed_value = 0
+
+    for building in buildings:
+        if destroyed_value >= target_value:
+            break
+
+        building_type = building["building_type"]
+        level = int(building["level"])
+
+        definition = BUILDINGS.get(building_type)
+
+        if not definition:
+            continue
+
+        base_value = sum(
+            int(amount)
+            for amount in definition["base_cost"].values()
+        )
+
+        while level > 0 and destroyed_value < target_value:
+            level_value = ceil(
+                base_value
+                * (BUILDING_COST_GROWTH ** (level - 1))
+            )
+
+            destroyed_value += level_value
+            level -= 1
+
+        if level <= 0:
+            await connection.execute(
+                """
+                DELETE FROM buildings
+                WHERE id = $1
+                """,
+                building["id"],
+            )
+        else:
+            await connection.execute(
+                """
+                UPDATE buildings
+                SET level = $1
+                WHERE id = $2
+                """,
+                level,
+                building["id"],
+            )
+
+    remaining_buildings = await connection.fetch(
+        """
+        SELECT building_type, level
+        FROM buildings
+        WHERE realm_id = $1
+        """,
+        realm_id,
+    )
+
+    after = infrastructure_value(remaining_buildings)
+
+    actual_damage = (
+        max(0, before - after) / before
+        if before > 0
+        else 0.0
+    )
+
+    return before, after, min(1.0, actual_damage)
+
+
 async def save_attacker_survivors(
     connection,
     mission_id,
@@ -295,9 +415,6 @@ async def save_report(
     attacker_owner = owner_map[attacker_realm_id]
     defender_owner = owner_map[defender_realm_id]
 
-    attacker_remaining_power = army_power(attackers, "attack")
-    defender_remaining_power = army_power(defenders, "defense")
-
     if attackers and not defenders:
         outcome = "attacker_victory"
         winner = attacker_realm_id
@@ -311,6 +428,36 @@ async def save_report(
         outcome = "mutual_destruction"
         winner = None
 
+    infrastructure_before = 0
+    infrastructure_after = 0
+    infrastructure_damage = 0.0
+    vassalage_unlocked = False
+
+    if outcome == "attacker_victory":
+        if defender_power_initial <= 0:
+            target_damage = MAX_INFRASTRUCTURE_DAMAGE
+        else:
+            ratio = attacker_power_initial / defender_power_initial
+
+            target_damage = min(
+                MAX_INFRASTRUCTURE_DAMAGE,
+                max(0.15, 0.15 + max(0, ratio - 1) * 0.12),
+            )
+
+        (
+            infrastructure_before,
+            infrastructure_after,
+            infrastructure_damage,
+        ) = await damage_infrastructure(
+            connection,
+            defender_realm_id,
+            target_damage,
+        )
+
+        vassalage_unlocked = (
+            infrastructure_damage >= MIN_DAMAGE_FOR_VASSALAGE
+        )
+
     report_id = await connection.fetchval(
         """
         INSERT INTO battle_reports (
@@ -323,6 +470,10 @@ async def save_report(
             defender_power,
             attacker_losses,
             defender_losses,
+            infrastructure_before,
+            infrastructure_after,
+            infrastructure_damage,
+            vassalage_unlocked,
             outcome,
             rounds,
             attacker_morale,
@@ -332,7 +483,8 @@ async def save_report(
         VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
-            $10, $11, $12, $13, $14::JSONB
+            $10, $11, $12, $13,
+            $14, $15, $16, $17, $18::JSONB
         )
         RETURNING id
         """,
@@ -345,6 +497,10 @@ async def save_report(
         defender_power_initial,
         attacker_losses_total,
         defender_losses_total,
+        infrastructure_before,
+        infrastructure_after,
+        infrastructure_damage,
+        vassalage_unlocked,
         outcome,
         rounds,
         round(attacker_morale, 3),
