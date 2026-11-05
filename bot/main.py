@@ -19,6 +19,7 @@ from bot.handlers.buildings import router as buildings_router
 from bot.handlers.army import router as army_router
 from bot.handlers.economy import router as economy_router
 from bot.handlers.territory import router as territory_router
+from bot.handlers.world import router as world_router
 from bot.handlers.ranking import router as ranking_router
 from bot.handlers.research import router as research_router
 from bot.handlers.battle import router as battle_router
@@ -66,6 +67,7 @@ async def main():
         dp.include_router(army_router)
         dp.include_router(economy_router)
         dp.include_router(territory_router)
+        dp.include_router(world_router)
         dp.include_router(ranking_router)
         dp.include_router(research_router)
         dp.include_router(battle_router)
@@ -114,6 +116,7 @@ async def main():
         print("Sistema de alertas de ataques iniciado.")
         print("Sistema de guerra registrado.")
         print("Sistema territorial registrado.")
+        print("Explorador del mundo registrado.")
         print("Panel dinámico registrado.")
         print("Notificaciones de finalización activadas.")
         print("Menú persistente conectado.")

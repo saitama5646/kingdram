@@ -1,5 +1,7 @@
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 
 
 def territory_keyboard():
@@ -7,27 +9,33 @@ def territory_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="🗺️ Explorar el mundo",
+                    callback_data="world",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔄 Actualizar territorios",
-                    callback_data="territory_refresh"
+                    callback_data="territory_refresh",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="📦 Consultar recursos",
-                    callback_data="economy"
+                    callback_data="economy",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="🏰 Mi reino",
-                    callback_data="kingdom"
+                    callback_data="kingdom",
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="⌂ Menú principal",
-                    callback_data="main_menu"
+                    callback_data="main_menu",
                 )
-            ]
+            ],
         ]
     )
