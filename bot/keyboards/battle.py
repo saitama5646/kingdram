@@ -55,42 +55,38 @@ def troop_selection_keyboard(quantities, available):
 
         rows.append([
             InlineKeyboardButton(
-                text="➖ 1",
+                text="−",
                 callback_data=f"troops:change:{unit_type}:-1",
             ),
             InlineKeyboardButton(
-                text=str(quantity),
+                text=f"{quantity:,}".replace(",", "."),
                 callback_data="troops:noop",
             ),
             InlineKeyboardButton(
-                text="➕ 1",
+                text="+",
                 callback_data=f"troops:change:{unit_type}:1",
-            ),
-            InlineKeyboardButton(
-                text="➕ 5",
-                callback_data=f"troops:change:{unit_type}:5",
-            ),
-        ])
-
-        rows.append([
-            InlineKeyboardButton(
-                text="➖ 10",
-                callback_data=f"troops:change:{unit_type}:-10",
-            ),
-            InlineKeyboardButton(
-                text="➕ 10",
-                callback_data=f"troops:change:{unit_type}:10",
-            ),
-            InlineKeyboardButton(
-                text=f"Máx. {maximum}",
-                callback_data=f"troops:max:{unit_type}",
             ),
         ])
 
     rows.extend([
-        [InlineKeyboardButton(text="✍️ Introducir cantidades manualmente", callback_data="troops:manual")],
-        [InlineKeyboardButton(text="🚩 Enviar ejército", callback_data="troops:send")],
-        [InlineKeyboardButton(text="↩ Cancelar expedición", callback_data="troops:cancel")],
+        [
+            InlineKeyboardButton(
+                text="✍️ Cantidades manuales",
+                callback_data="troops:manual",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🚩 Enviar ejército",
+                callback_data="troops:send",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="↩ Cancelar",
+                callback_data="troops:cancel",
+            )
+        ],
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
