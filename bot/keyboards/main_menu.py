@@ -17,6 +17,9 @@ def persistent_menu_keyboard():
                 KeyboardButton(text="🏗 Edificios"),
                 KeyboardButton(text="🔬 Investigaciones"),
             ],
+            [
+                KeyboardButton(text="🕵 Espionaje"),
+            ],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -51,6 +54,12 @@ def main_menu_keyboard():
                 InlineKeyboardButton(
                     text="🔬 Investigaciones",
                     callback_data="research",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🕵 Espionaje",
+                    callback_data="espionage",
                 ),
             ],
             [

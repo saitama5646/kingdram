@@ -34,6 +34,7 @@ from bot.workers.military import military_worker
 from bot.workers.research import research_worker
 from bot.workers.missions import missions_worker
 from bot.workers.attack_warning import attack_warning_worker
+from bot.workers.espionage import espionage_worker
 
 
 WORKER_RESTART_DELAY = 5
@@ -166,6 +167,13 @@ async def main():
                 ),
                 name="kingdram-attack-warning-supervisor",
             ),
+            asyncio.create_task(
+                supervise_worker(
+                    lambda: espionage_worker(bot),
+                    "kingdram-espionage",
+                ),
+                name="kingdram-espionage-supervisor",
+            ),
         ])
 
         await bot.delete_webhook(
@@ -183,6 +191,7 @@ async def main():
         print("Sistema de investigación iniciado.")
         print("Sistema de misiones militares iniciado.")
         print("Sistema de alertas de ataques iniciado.")
+        print("Sistema de espionaje iniciado.")
         print("Sistema de guerra registrado.")
         print("Sistema territorial registrado.")
         print("Explorador del mundo registrado.")

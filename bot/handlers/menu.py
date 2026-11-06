@@ -20,6 +20,7 @@ from bot.handlers.territory import render_territories
 from bot.handlers.ranking import ranking_handler
 from bot.handlers.battle import war_menu as battle_menu
 from bot.handlers.diplomacy import render_diplomacy
+from bot.handlers.espionage import render_espionage
 
 from bot.services.construction import BUILDINGS
 from bot.services.military import UNITS
@@ -63,6 +64,7 @@ MENU_ACTIONS = {
     "🛡 Guerra": "battle",
     "🏆 Clasificación": "ranking",
     "👑 Diplomacia": "diplomacy",
+    "🕵 Espionaje": "espionage",
     "⌂ Menú principal": "main_menu",
 }
 
@@ -471,6 +473,9 @@ async def open_screen(context, destination):
 
     elif destination == "diplomacy":
         await render_diplomacy(context)
+
+    elif destination == "espionage":
+        await render_espionage(context)
 
 
 @router.callback_query(F.data == "main_menu")

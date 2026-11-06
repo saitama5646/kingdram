@@ -194,6 +194,76 @@ RESEARCH = {
         "building_requirements": {},
         "effects": {}
     },
+
+    "espionage_network": {
+        "name": "Red de informantes",
+        "icon": "🕵",
+        "branch": "Inteligencia",
+        "description": (
+            "Organiza una red de agentes e informantes. "
+            "Aumenta la eficacia de las misiones de espionaje."
+        ),
+        "base_cost": {
+            "wood": 500,
+            "stone": 250,
+            "gold": 700,
+            "food": 300
+        },
+        "base_time": 600,
+        "requirements": {},
+        "building_requirements": {"market": 2},
+        "effects": {
+            "spy_success_bonus": 0.03
+        }
+    },
+
+    "infiltration": {
+        "name": "Técnicas de infiltración",
+        "icon": "🗝",
+        "branch": "Inteligencia",
+        "description": (
+            "Mejora el entrenamiento, la discreción y la "
+            "capacidad de penetración de los agentes."
+        ),
+        "base_cost": {
+            "wood": 800,
+            "stone": 450,
+            "gold": 1100,
+            "food": 500
+        },
+        "base_time": 900,
+        "requirements": {
+            "espionage_network": 2
+        },
+        "building_requirements": {"market": 3},
+        "effects": {
+            "spy_success_bonus": 0.05
+        }
+    },
+
+    "counterintelligence": {
+        "name": "Contraespionaje",
+        "icon": "🔐",
+        "branch": "Inteligencia",
+        "description": (
+            "Desarrolla protocolos de seguridad y detección "
+            "para dificultar las infiltraciones enemigas."
+        ),
+        "base_cost": {
+            "wood": 900,
+            "stone": 700,
+            "gold": 1200,
+            "food": 450
+        },
+        "base_time": 1000,
+        "requirements": {
+            "espionage_network": 1
+        },
+        "building_requirements": {"barracks": 2},
+        "effects": {
+            "counterespionage_bonus": 0.05
+        }
+    },
 }
 
 
