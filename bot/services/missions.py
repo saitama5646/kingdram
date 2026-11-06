@@ -32,6 +32,14 @@ def validate_troops(troops):
     for unit_type in UNIT_ORDER:
         raw_quantity = troops.get(unit_type, 0)
 
+        # bool es una subclase de int en Python.
+        # No debe aceptarse como cantidad de tropas.
+        if isinstance(raw_quantity, bool):
+            raise ValueError(
+                f"Cantidad inválida para {unit_type}: "
+                "no se permiten valores booleanos."
+            )
+
         try:
             quantity = int(raw_quantity)
         except (TypeError, ValueError, OverflowError):
