@@ -243,11 +243,24 @@ def aggregate_combat_units(units):
         if quantity > 0
     ]
 
+
 def resolve_volley(shooters, targets, morale):
     """
-    Resuelve una salva conservando las unidades destruidas
-    para los informes y compactando los supervivientes equivalentes.
+    Resuelve una salva con selección ponderada de objetivos.
+
+    El árbol Fenwick mantiene el peso de cada grupo de unidades
+    vivas y permite seleccionar un objetivo en O(log n), evitando
+    recorrer todos los objetivos en cada disparo.
+
+    Se conservan:
+    - Selección aleatoria ponderada por cantidad.
+    - Daño individual a las unidades de grupos.
+    - Escudos y daño acumulado al casco.
+    - Destrucción y probabilidad de explosión.
+    - Registro de unidades destruidas.
+    - Compactación de supervivientes equivalentes.
     """
+
     if not shooters or not targets:
         return 0.0, targets
 
@@ -263,10 +276,97 @@ def resolve_volley(shooters, targets, morale):
             float(target.get("shield", 0)),
         )
 
+    # --------------------------------------------------------
+    # Árbol Fenwick dinámico
+    # --------------------------------------------------------
+
+    fenwick = []
+
+    def prefix_sum(end):
+        """
+        Suma de los pesos de las posiciones 1..end.
+        """
+        result = 0
+        index = end
+
+        while index > 0:
+            result += fenwick[index - 1]
+            index -= index & -index
+
+        return result
+
+    def append_weight(weight):
+        """
+        Añade una posición al árbol sin reconstruirlo.
+        """
+        index = len(fenwick) + 1
+        value = int(weight)
+
+        lowbit = index & -index
+
+        if lowbit > 1:
+            value += (
+                prefix_sum(index - 1)
+                - prefix_sum(index - lowbit)
+            )
+
+        fenwick.append(value)
+
+    def add_weight(index_zero_based, delta):
+        """
+        Modifica el peso de una posición existente.
+        """
+        index = index_zero_based + 1
+
+        while index <= len(fenwick):
+            fenwick[index - 1] += delta
+            index += index & -index
+
+    def find_by_order(order):
+        """
+        Encuentra la posición que contiene el elemento ponderado
+        número 'order', usando búsqueda binaria en el árbol.
+        """
+        index = 0
+        bit = 1
+
+        while bit << 1 <= len(fenwick):
+            bit <<= 1
+
+        while bit:
+            next_index = index + bit
+
+            if (
+                next_index <= len(fenwick)
+                and fenwick[next_index - 1] < order
+            ):
+                order -= fenwick[next_index - 1]
+                index = next_index
+
+            bit >>= 1
+
+        return index
+
+    for target in targets:
+        quantity = max(
+            0,
+            int(target.get("quantity", 1)),
+        )
+
+        if target.get("destroyed", False):
+            quantity = 0
+
+        append_weight(quantity)
+
     total_damage = 0.0
+
     morale_multiplier = morale_damage_multiplier(
         max(0.0, float(morale))
     )
+
+    # --------------------------------------------------------
+    # Resolver los disparos
+    # --------------------------------------------------------
 
     for shooter in shooters:
         if shooter.get("destroyed", False):
@@ -287,49 +387,57 @@ def resolve_volley(shooters, targets, morale):
             continue
 
         for _ in range(shooter_quantity):
-            living_quantity = sum(
-                max(0, int(target.get("quantity", 1)))
-                for target in targets
-                if not target.get("destroyed", False)
-            )
+            living_quantity = prefix_sum(len(fenwick))
 
             if living_quantity <= 0:
                 break
 
             selection = random.randrange(living_quantity)
-            target_index = None
 
-            for index, candidate in enumerate(targets):
-                if candidate.get("destroyed", False):
-                    continue
+            target_index = find_by_order(selection + 1)
 
-                quantity = max(
-                    0,
-                    int(candidate.get("quantity", 1)),
+            if target_index >= len(targets):
+                raise RuntimeError(
+                    "El árbol de selección devolvió "
+                    "un objetivo fuera de rango."
                 )
-
-                if selection < quantity:
-                    target_index = index
-                    break
-
-                selection -= quantity
-
-            if target_index is None:
-                break
 
             target = targets[target_index]
 
-            # Una unidad del grupo recibe el impacto individualmente.
+            if target.get("destroyed", False):
+                raise RuntimeError(
+                    "El árbol Fenwick seleccionó "
+                    "una unidad destruida."
+                )
+
+            # ------------------------------------------------
+            # Separar una unidad del grupo
+            # ------------------------------------------------
+
             if int(target.get("quantity", 1)) > 1:
                 target["quantity"] -= 1
 
+                add_weight(
+                    target_index,
+                    -1,
+                )
+
                 individual = dict(target)
+
                 individual["quantity"] = 1
                 individual["round_shield_damage"] = 0.0
                 individual["round_hull_damage"] = 0.0
 
                 targets.append(individual)
+
+                append_weight(1)
+
+                target_index = len(targets) - 1
                 target = individual
+
+            # ------------------------------------------------
+            # Aplicar daño
+            # ------------------------------------------------
 
             attack = base_attack * random.uniform(
                 1.0 - DAMAGE_VARIATION,
@@ -341,7 +449,10 @@ def resolve_volley(shooters, targets, morale):
                 float(target.get("_shield_remaining", 0)),
             )
 
-            absorbed = min(shield_remaining, attack)
+            absorbed = min(
+                shield_remaining,
+                attack,
+            )
 
             target["_shield_remaining"] = (
                 shield_remaining - absorbed
@@ -375,36 +486,64 @@ def resolve_volley(shooters, targets, morale):
             )
 
             target["hull_damage"] = (
-                current_hull_damage + actual_hull_damage
+                current_hull_damage
+                + actual_hull_damage
             )
 
-            target["round_hull_damage"] += actual_hull_damage
+            target["round_hull_damage"] += (
+                actual_hull_damage
+            )
 
-            total_damage += absorbed + actual_hull_damage
+            total_damage += (
+                absorbed
+                + actual_hull_damage
+            )
+
+            # ------------------------------------------------
+            # Destrucción
+            # ------------------------------------------------
 
             if target["hull_damage"] >= maximum_hull:
                 target["destroyed"] = True
+
+                add_weight(
+                    target_index,
+                    -1,
+                )
+
                 continue
 
             remaining_hull_after_hit = (
-                maximum_hull - target["hull_damage"]
+                maximum_hull
+                - target["hull_damage"]
             )
 
-            # La explosión solo se evalúa por debajo del 30%.
-            if remaining_hull_after_hit < maximum_hull * 0.30:
+            if (
+                remaining_hull_after_hit
+                < maximum_hull * 0.30
+            ):
                 destruction_chance = max(
                     0.0,
                     min(
                         1.0,
                         1.0
-                        - remaining_hull_after_hit / maximum_hull,
+                        - remaining_hull_after_hit
+                        / maximum_hull,
                     ),
                 )
 
                 if random.random() < destruction_chance:
                     target["destroyed"] = True
 
-    # Nunca eliminar del registro las unidades destruidas.
+                    add_weight(
+                        target_index,
+                        -1,
+                    )
+
+    # --------------------------------------------------------
+    # Compactación de resultados
+    # --------------------------------------------------------
+
     destroyed_units = []
     compacted = {}
 
@@ -437,9 +576,12 @@ def resolve_volley(shooters, targets, morale):
         else:
             compacted[key]["quantity"] += quantity
 
-    # Muertos primero: se conserva el orden histórico esperado
-    # por los informes y pruebas; supervivientes después.
-    targets[:] = destroyed_units + list(compacted.values())
+    # Mantener el registro de unidades destruidas para los
+    # informes, seguido de los supervivientes compactados.
+    targets[:] = (
+        destroyed_units
+        + list(compacted.values())
+    )
 
     return total_damage, targets
 

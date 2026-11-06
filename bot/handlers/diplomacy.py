@@ -10,6 +10,7 @@ from bot.database.connection import get_pool
 from bot.services.vassalage import (
     get_vassalage_data,
     decide_vassalage_request,
+    grant_independence,
 )
 
 
@@ -23,6 +24,18 @@ class AllianceCreation(StatesGroup):
 
 def diplomacy_keyboard(data):
     builder = InlineKeyboardBuilder()
+
+    for vassal in data["vassals"]:
+        builder.button(
+            text=(
+                "⚖️ Independencia: "
+                f"{vassal['name']}"
+            ),
+            callback_data=(
+                "diplomacy:vassal:release:"
+                f"{vassal['vassal_realm_id']}"
+            ),
+        )
 
     for request in data["incoming"]:
         request_id = request["id"]
@@ -249,6 +262,25 @@ async def render_diplomacy(
             lines.append(
                 f"• {escape(vassal['name'])}"
             )
+
+            builder_button = InlineKeyboardBuilder()
+
+            builder_button.button(
+                text=(
+                    "⚖️ Conceder independencia: "
+                    f"{vassal['name']}"
+                ),
+                callback_data=(
+                    "diplomacy:vassal:release:"
+                    f"{vassal['vassal_realm_id']}"
+                ),
+            )
+
+            builder_button.adjust(1)
+
+            # Añadir el botón a la lista de acciones
+            # de diplomacia existente.
+            diplomacy_keyboard_builder = None
     else:
         lines.append(
             "<i>No tienes reinos vasallos.</i>"
@@ -321,7 +353,9 @@ async def diplomacy_handler(callback: CallbackQuery):
 
 
 @router.callback_query(
-    F.data.startswith("diplomacy:vassal:")
+    F.data.regexp(
+        r"^diplomacy:vassal:(accept|reject):\d+$"
+    )
 )
 async def vassalage_decision_handler(
     callback: CallbackQuery,
@@ -370,6 +404,61 @@ async def vassalage_decision_handler(
             answer=False,
         )
 
+
+
+
+@router.callback_query(
+    F.data.startswith("diplomacy:vassal:release:")
+)
+async def vassalage_release_handler(
+    callback: CallbackQuery,
+):
+    try:
+        vassal_realm_id = int(
+            callback.data.split(":")[3]
+        )
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Reino vasallo no válido.",
+            show_alert=True,
+        )
+        return
+
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        lord_realm_id = await connection.fetchval(
+            """
+            SELECT id
+            FROM realms
+            WHERE owner_id = $1
+            """,
+            callback.from_user.id,
+        )
+
+    if not lord_realm_id:
+        await callback.answer(
+            "No tienes un reino fundado.",
+            show_alert=True,
+        )
+        return
+
+    success, message = await grant_independence(
+        lord_realm_id,
+        vassal_realm_id,
+        callback.from_user.id,
+    )
+
+    await callback.answer(
+        message,
+        show_alert=not success,
+    )
+
+    if success:
+        await render_diplomacy(
+            callback,
+            answer=False,
+        )
 
 
 @router.callback_query(F.data == "alliance:create")

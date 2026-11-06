@@ -775,5 +775,61 @@ class CombatTests(unittest.TestCase):
         self.assertEqual(survivors[0]["hull_damage"], 100)
 
 
+    def test_fenwick_selection_preserves_large_group_quantity(self):
+        shooters = [
+            {
+                "attack": 10,
+                "quantity": 200,
+                "destroyed": False,
+            },
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "attack": 8,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "round_shield_damage": 0,
+                "round_hull_damage": 0,
+                "quantity": 2000,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ):
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                with patch(
+                    "bot.workers.missions.random.random",
+                    return_value=1.0,
+                ):
+                    resolve_volley(
+                        shooters,
+                        targets,
+                        1.0,
+                    )
+
+        total_quantity = sum(
+            int(target.get("quantity", 1))
+            for target in targets
+        )
+
+        damaged_quantity = sum(
+            int(target.get("quantity", 1))
+            for target in targets
+            if float(target.get("hull_damage", 0)) > 0
+        )
+
+        self.assertEqual(total_quantity, 2000)
+        self.assertEqual(damaged_quantity, 200)
+
+
 if __name__ == "__main__":
     unittest.main()
