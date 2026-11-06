@@ -201,7 +201,9 @@ RESEARCH = {
         "branch": "Inteligencia",
         "description": (
             "Organiza una red de agentes e informantes. "
-            "Aumenta la eficacia de las misiones de espionaje."
+            "Aumenta un 2 % por nivel la probabilidad de éxito "
+            "del espionaje. En niveles superiores reduce el coste "
+            "y el tiempo de entrenamiento de los agentes."
         ),
         "base_cost": {
             "wood": 500,
@@ -213,7 +215,7 @@ RESEARCH = {
         "requirements": {},
         "building_requirements": {"market": 2},
         "effects": {
-            "spy_success_bonus": 0.03
+            "spy_success_bonus": 0.02
         }
     },
 
@@ -317,6 +319,31 @@ def get_research_effects(research_levels):
                 effects.get(effect, 0)
                 + bonus * int(level)
             )
+
+    # Efectos escalonados de Red de informantes.
+    network_level = max(
+        0,
+        min(5, int(research_levels.get("espionage_network", 0))),
+    )
+
+    effects["spy_success_bonus"] = (
+        effects.get("spy_success_bonus", 0)
+        + network_level * 0.02
+    )
+
+    effects["spy_cost_reduction"] = (
+        0.05 if network_level >= 2 else 0.0
+    )
+
+    if network_level >= 4:
+        effects["spy_cost_reduction"] = 0.10
+
+    effects["spy_training_speed"] = (
+        0.10 if network_level >= 3 else 0.0
+    )
+
+    if network_level >= 5:
+        effects["spy_training_speed"] = 0.15
 
     return effects
 

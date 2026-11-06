@@ -164,8 +164,18 @@ async def recruit_spies(user_id, quantity):
                 training_bonus,
             )
 
+            cost_reduction = max(
+                0.0,
+                min(
+                    0.10,
+                    float(effects.get("spy_cost_reduction", 0)),
+                ),
+            )
+
             costs = {
-                resource: amount * quantity
+                resource: ceil(
+                    amount * quantity * (1.0 - cost_reduction)
+                )
                 for resource, amount in SPY_COST.items()
             }
 
@@ -275,6 +285,9 @@ async def launch_spy_mission(user_id, target_realm_id, mission_type, spies_sent)
                 own_id,
             )
 
+            if spies_sent not in (1, 5, 10):
+                return False, "Puedes enviar 1, 5 o 10 espías."
+
             if available < spies_sent:
                 return False, (
                     f"Espías disponibles: {available}. "
@@ -309,6 +322,7 @@ async def launch_spy_mission(user_id, target_realm_id, mission_type, spies_sent)
                 SET quantity = quantity - $1,
                     updated_at = NOW()
                 WHERE realm_id = $2
+                  AND quantity >= $1
                 """,
                 spies_sent,
                 own_id,
@@ -396,6 +410,7 @@ async def get_spy_dashboard(user_id):
                 er.success,
                 er.spies_lost,
                 er.created_at,
+                er.intelligence,
                 target.name AS target_name
             FROM espionage_reports er
             JOIN realms target

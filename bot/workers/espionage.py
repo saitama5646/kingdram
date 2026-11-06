@@ -45,24 +45,17 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
             attacker_id = mission["attacker_realm_id"]
             target_id = mission["target_realm_id"]
 
-            await connection.fetchrow(
+            # Bloquear los reinos siempre en el mismo orden
+            # para reducir el riesgo de deadlocks.
+            await connection.fetch(
                 """
                 SELECT id
                 FROM realms
-                WHERE id = $1
+                WHERE id = ANY($1::BIGINT[])
+                ORDER BY id
                 FOR UPDATE
                 """,
-                attacker_id,
-            )
-
-            await connection.fetchrow(
-                """
-                SELECT id
-                FROM realms
-                WHERE id = $1
-                FOR UPDATE
-                """,
-                target_id,
+                sorted([attacker_id, target_id]),
             )
 
             attacker_research_rows = await connection.fetch(
@@ -224,6 +217,14 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
             else:
                 spies_lost = 1
 
+            # Los espías supervivientes regresan tanto en caso
+            # de éxito como de fracaso.
+            spies_returned = max(
+                0,
+                int(mission["spies_sent"]) - spies_lost,
+            )
+
+            if spies_returned:
                 await connection.execute(
                     """
                     INSERT INTO realm_spies (
@@ -231,21 +232,15 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
                         quantity,
                         updated_at
                     )
-                    VALUES ($1, 0, NOW())
-                    ON CONFLICT (realm_id) DO NOTHING
-                    """,
-                    attacker_id,
-                )
-
-                await connection.execute(
-                    """
-                    UPDATE realm_spies
-                    SET quantity = quantity + $1,
+                    VALUES ($1, $2, NOW())
+                    ON CONFLICT (realm_id)
+                    DO UPDATE SET
+                        quantity = realm_spies.quantity
+                            + EXCLUDED.quantity,
                         updated_at = NOW()
-                    WHERE realm_id = $2
                     """,
-                    mission["spies_sent"] - spies_lost,
                     attacker_id,
+                    spies_returned,
                 )
 
             await connection.execute(
@@ -290,6 +285,7 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
                 "mission_type": mission["mission_type"],
                 "success": success,
                 "spies_lost": spies_lost,
+                "spies_returned": spies_returned,
                 "intelligence": intelligence,
             }
 
@@ -301,22 +297,40 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
                 else "Misión descubierta o fallida"
             )
 
+            from html import escape
+            from json import dumps
+
             message = (
                 "🕵 <b>INFORME DE ESPIONAJE</b>\n\n"
                 f"🏰 Reino objetivo: "
-                f"<b>{notification['target_name']}</b>\n"
+                f"<b>{escape(str(notification['target_name']))}</b>\n"
                 f"📋 Misión: "
                 f"<b>{MISSION_TYPES[notification['mission_type']]}</b>\n"
                 f"Resultado: <b>{result}</b>\n"
                 f"Espías perdidos: "
                 f"<b>{notification['spies_lost']}</b>\n"
+                f"Espías retornados: "
+                f"<b>{notification['spies_returned']}</b>\n"
             )
 
             if notification["success"]:
                 message += "\n<b>INFORMACIÓN OBTENIDA</b>\n"
 
+                labels = {
+                    "wood": "Madera",
+                    "stone": "Piedra",
+                    "gold": "Oro",
+                    "food": "Alimentos",
+                    "army": "Ejército",
+                    "buildings": "Edificios",
+                    "research": "Investigaciones",
+                }
+
                 for key, value in notification["intelligence"].items():
-                    message += f"• {key}: {value}\n"
+                    message += (
+                        f"• <b>{labels.get(key, key.title())}</b>: "
+                        f"{value}\n"
+                    )
 
             await bot.send_message(
                 notification["owner_id"],
