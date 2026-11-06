@@ -88,3 +88,24 @@ ON espionage_reports(attacker_realm_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_espionage_reports_target
 ON espionage_reports(target_realm_id, created_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS spy_training_queue (
+    id BIGSERIAL PRIMARY KEY,
+    realm_id BIGINT NOT NULL
+        REFERENCES realms(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL
+        CHECK (quantity IN (1, 5, 10)),
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued', 'completed', 'cancelled')),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ready_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_spy_training_queue_ready
+ON spy_training_queue(status, ready_at);
+
+CREATE INDEX IF NOT EXISTS idx_spy_training_queue_realm
+ON spy_training_queue(realm_id, status, created_at DESC);

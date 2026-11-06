@@ -237,7 +237,8 @@ RESEARCH = {
         },
         "building_requirements": {"market": 3},
         "effects": {
-            "spy_success_bonus": 0.05
+            "spy_success_bonus": 0.05,
+            "counterespionage_reduction": 0.02
         }
     },
 

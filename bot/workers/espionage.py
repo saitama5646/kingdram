@@ -118,6 +118,15 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
                         "counterespionage_bonus",
                         0,
                     )
+                )
+                - max(
+                    0.0,
+                    float(
+                        attacker_effects.get(
+                            "counterespionage_reduction",
+                            0,
+                        )
+                    ),
                 ),
             )
 
@@ -324,11 +333,69 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
             )
 
 
+async def process_spy_training_queue():
+    pool = await get_pool()
+    completed_count = 0
+
+    while True:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                training = await connection.fetchrow(
+                    """
+                    SELECT id, realm_id, quantity
+                    FROM spy_training_queue
+                    WHERE status = 'queued'
+                      AND ready_at <= NOW()
+                    ORDER BY ready_at, id
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                    """
+                )
+
+                if not training:
+                    break
+
+                await connection.execute(
+                    """
+                    INSERT INTO realm_spies (
+                        realm_id,
+                        quantity,
+                        updated_at
+                    )
+                    VALUES ($1, $2, NOW())
+                    ON CONFLICT (realm_id)
+                    DO UPDATE SET
+                        quantity = realm_spies.quantity
+                            + EXCLUDED.quantity,
+                        updated_at = NOW()
+                    """,
+                    training["realm_id"],
+                    training["quantity"],
+                )
+
+                await connection.execute(
+                    """
+                    UPDATE spy_training_queue
+                    SET status = 'completed',
+                        completed_at = NOW()
+                    WHERE id = $1
+                      AND status = 'queued'
+                    """,
+                    training["id"],
+                )
+
+                completed_count += 1
+
+    return completed_count
+
+
 async def espionage_worker(bot: Bot):
     print("Sistema de espionaje iniciado.")
 
     while True:
         try:
+            await process_spy_training_queue()
+
             pool = await get_pool()
 
             async with pool.acquire() as connection:

@@ -20,17 +20,17 @@ def espionage_keyboard(data):
     builder = InlineKeyboardBuilder()
 
     builder.button(
-        text="🕵 Reclutar 1 espía",
+        text="🕵 Entrenar 1 espía",
         callback_data="espionage:recruit:1",
     )
 
     builder.button(
-        text="🕵 Reclutar 5 espías",
+        text="🕵 Entrenar 5 espías",
         callback_data="espionage:recruit:5",
     )
 
     builder.button(
-        text="🕵 Reclutar 10 espías",
+        text="🕵 Entrenar 10 espías",
         callback_data="espionage:recruit:10",
     )
 

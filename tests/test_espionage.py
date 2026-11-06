@@ -5,6 +5,7 @@ from bot.services.espionage import (
     calculate_spy_success,
     calculate_mission_duration,
     clamp,
+    calculate_spy_training_duration,
 )
 
 
@@ -76,6 +77,47 @@ class EspionageTests(unittest.TestCase):
 
         self.assertGreater(far, near)
 
+
+    def test_training_duration_positive(self):
+        self.assertGreater(
+            calculate_spy_training_duration(1),
+            0,
+        )
+
+    def test_training_duration_scales_with_quantity(self):
+        one = calculate_spy_training_duration(1)
+        five = calculate_spy_training_duration(5)
+        ten = calculate_spy_training_duration(10)
+
+        self.assertGreater(five, one)
+        self.assertGreater(ten, five)
+
+    def test_training_research_reduces_duration(self):
+        base = calculate_spy_training_duration(5)
+        improved = calculate_spy_training_duration(
+            5,
+            speed_bonus=0.10,
+        )
+
+        self.assertLess(improved, base)
+
+    def test_training_bonus_has_cap(self):
+        capped = calculate_spy_training_duration(
+            10,
+            speed_bonus=0.75,
+        )
+        excessive = calculate_spy_training_duration(
+            10,
+            speed_bonus=10,
+        )
+
+        self.assertEqual(capped, excessive)
+
+    def test_training_invalid_quantity(self):
+        for quantity in (0, 2, 3, -1, 11):
+            with self.subTest(quantity=quantity):
+                with self.assertRaises(ValueError):
+                    calculate_spy_training_duration(quantity)
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,29 @@ def calculate_spy_success(
     return clamp(chance, 0.15, 0.90)
 
 
+def calculate_spy_training_duration(
+    quantity,
+    speed_bonus=0,
+    base_seconds=SPY_TRAINING_SECONDS,
+):
+    quantity = int(quantity)
+
+    if quantity not in (1, 5, 10):
+        raise ValueError("Cantidad de espías no válida.")
+
+    speed_bonus = max(0.0, float(speed_bonus))
+    speed_bonus = min(speed_bonus, 0.75)
+
+    return max(
+        1,
+        ceil(
+            int(base_seconds)
+            * quantity
+            / (1.0 + speed_bonus)
+        ),
+    )
+
+
 def calculate_mission_duration(distance, spy_speed=2, speed_bonus=0):
     return calculate_travel_time(
         distance,
@@ -109,7 +132,37 @@ async def recruit_spies(user_id, quantity):
             )
 
             if not resources:
-                return False, "No se encontraron los recursos del reino."
+                return False, (
+                    "No se encontraron los recursos del reino."
+                )
+
+            research_rows = await connection.fetch(
+                """
+                SELECT research_type, level
+                FROM realm_research
+                WHERE realm_id = $1
+                """,
+                realm_id,
+            )
+
+            research_levels = {
+                row["research_type"]: row["level"]
+                for row in research_rows
+            }
+
+            from bot.services.research import get_research_effects
+
+            effects = get_research_effects(research_levels)
+
+            training_bonus = max(
+                0.0,
+                float(effects.get("spy_training_speed", 0)),
+            )
+
+            duration = calculate_spy_training_duration(
+                quantity,
+                training_bonus,
+            )
 
             costs = {
                 resource: amount * quantity
@@ -146,24 +199,29 @@ async def recruit_spies(user_id, quantity):
 
             await connection.execute(
                 """
-                INSERT INTO realm_spies (
+                INSERT INTO spy_training_queue (
                     realm_id,
                     quantity,
-                    updated_at
+                    status,
+                    started_at,
+                    ready_at
                 )
-                VALUES ($1, $2, NOW())
-                ON CONFLICT (realm_id)
-                DO UPDATE SET
-                    quantity = realm_spies.quantity
-                        + EXCLUDED.quantity,
-                    updated_at = NOW()
+                VALUES (
+                    $1,
+                    $2,
+                    'queued',
+                    NOW(),
+                    NOW() + $3 * INTERVAL '1 second'
+                )
                 """,
                 realm_id,
                 quantity,
+                duration,
             )
 
     return True, (
-        f"Reclutamiento completado: {quantity} espía(s)."
+        f"Entrenamiento iniciado: {quantity} espía(s).\n"
+        f"Tiempo estimado: {duration} segundos."
     )
 
 
