@@ -11,7 +11,7 @@ RESOURCES = {
     "wood": {"name": "Madera", "icon": "🪵", "value": 6},
     "stone": {"name": "Piedra", "icon": "🪨", "value": 12},
     "gold": {"name": "Oro", "icon": "🪙", "value": 36},
-    "food": {"name": "Alimentos", "icon": "🌾", "value": 4},
+    "food": {"name": "Alimentos", "icon": "🌾", "value": 7},
 }
 
 PRESET_AMOUNTS = (50, 250, 1000, 5000)
@@ -238,7 +238,7 @@ async def show_bazaar(callback):
         "Intercambia excedentes por los recursos "
         "que necesitas.",
         "",
-        "<i>La madera es abundante, la piedra tiene un valor intermedio y el oro es el recurso más escaso.</i>",
+        "<i>La madera es abundante, la piedra tiene un valor intermedio, los alimentos son esenciales para las expediciones y el oro es el recurso más escaso.</i>",
     ])
 
     await callback.answer()

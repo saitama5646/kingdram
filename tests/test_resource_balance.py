@@ -43,7 +43,7 @@ class TestResourceBalance(unittest.TestCase):
 
     def test_research_gold_cost_is_reduced(self):
         cost = get_research_cost("agriculture", 1)
-        self.assertEqual(cost["gold"], 66)
+        self.assertEqual(cost["gold"], 84)
 
     def test_gold_storage_is_the_smallest(self):
         self.assertGreater(BASE_CAPACITY["wood"], BASE_CAPACITY["stone"])

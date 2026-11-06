@@ -11,13 +11,15 @@ VASSAL_TRIBUTE_RATE = Decimal("0.20")
 MINUTES_PER_DAY = 24 * 60
 
 
-def get_realm_production(buildings):
+def get_realm_production(buildings, research_effects=None):
     """
-    Calcula la producción por minuto de un reino.
+    Calcula la producción real por minuto de un reino.
 
-    buildings puede contener registros de base de datos
-    con las columnas building_type y level.
+    Incluye las bonificaciones de investigación para que
+    las estimaciones y la producción del trabajador coincidan.
     """
+
+    research_effects = research_effects or {}
 
     production = {
         resource: 0
@@ -41,6 +43,20 @@ def get_realm_production(buildings):
             level
         )
 
+    for resource in RESOURCES:
+        bonus = float(
+            research_effects.get(
+                f"{resource}_production",
+                0,
+            )
+        )
+
+        multiplier = max(0, 1 + bonus)
+
+        production[resource] = int(
+            production[resource] * multiplier
+        )
+
     return production
 
 
@@ -57,15 +73,22 @@ def get_daily_production(buildings):
     }
 
 
-def calculate_interval_production(buildings, elapsed_minutes):
+def calculate_interval_production(
+    buildings,
+    elapsed_minutes,
+    research_effects=None,
+):
     """
-    Calcula los recursos generados durante un intervalo.
-    No calcula producción negativa ni acepta tiempos inválidos.
+    Calcula los recursos generados durante un intervalo,
+    incluyendo las bonificaciones tecnológicas.
     """
 
     elapsed_minutes = max(0, int(elapsed_minutes))
 
-    production_per_minute = get_realm_production(buildings)
+    production_per_minute = get_realm_production(
+        buildings,
+        research_effects,
+    )
 
     return {
         resource: amount * elapsed_minutes

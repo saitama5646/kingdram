@@ -1,3 +1,6 @@
+BUILDING_COST_GROWTH = 1.55
+
+
 BUILDINGS = {
     "sawmill": {
         "name": "Aserradero",
@@ -47,7 +50,7 @@ BUILDINGS = {
     "market": {
         "name": "Mercado",
         "icon": "🏪",
-        "description": "Impulsa la economía del reino mediante el comercio.",
+        "description": "Genera un ingreso modesto de oro con una inversión inicial reducida.",
         "resource": "gold",
         "base_cost": {"wood": 200, "stone": 150, "gold": 55},
         "base_time": 150,
@@ -85,7 +88,7 @@ BUILDINGS = {
 
 def get_upgrade_cost(building_type, level):
     building = BUILDINGS[building_type]
-    multiplier = 1.65 ** (level - 1)
+    multiplier = BUILDING_COST_GROWTH ** (level - 1)
 
     return {
         resource: int(amount * multiplier)

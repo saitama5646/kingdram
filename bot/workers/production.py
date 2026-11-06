@@ -4,7 +4,8 @@ import logging
 from decimal import Decimal, ROUND_FLOOR
 
 from bot.database.connection import get_pool
-from bot.services.construction import BUILDINGS, get_production
+from bot.services.construction import BUILDINGS
+from bot.services.economy import get_realm_production
 from bot.services.research import get_research_effects
 from bot.services.storage import (
     get_storage_capacity,
@@ -18,45 +19,15 @@ PRODUCTION_INTERVAL_SECONDS = 60
 
 
 def calculate_production(buildings, research_effects=None):
-    research_effects = research_effects or {}
+    """
+    Mantiene la interfaz utilizada por el trabajador,
+    delegando el cálculo al servicio económico central.
+    """
 
-    production = {
-        resource: 0
-        for resource in RESOURCES
-    }
-
-    for building in buildings:
-        building_type = building["building_type"]
-
-        if building_type not in BUILDINGS:
-            continue
-
-        resource = BUILDINGS[building_type]["resource"]
-
-        if resource not in production:
-            continue
-
-        production[resource] += get_production(
-            building_type,
-            building["level"],
-        )
-
-    for resource in RESOURCES:
-        bonus = research_effects.get(
-            f"{resource}_production",
-            0,
-        )
-
-        multiplier = max(
-            0,
-            1 + float(bonus),
-        )
-
-        production[resource] = int(
-            production[resource] * multiplier
-        )
-
-    return production
+    return get_realm_production(
+        buildings,
+        research_effects,
+    )
 
 
 def split_tribute(production, rate):

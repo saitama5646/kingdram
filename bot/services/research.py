@@ -197,7 +197,7 @@ RESEARCH = {
 }
 
 
-COST_GROWTH = 1.75
+COST_GROWTH = 1.60
 TIME_GROWTH = 1.60
 
 
@@ -216,7 +216,7 @@ def get_research_cost(research_type, target_level):
     return {
         resource: ceil(
             amount * multiplier * (
-                0.55 if resource == "gold" else 1
+                0.70 if resource == "gold" else 1
             )
         )
         for resource, amount in research["base_cost"].items()
