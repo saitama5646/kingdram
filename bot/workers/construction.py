@@ -8,6 +8,22 @@ from bot.database.connection import get_pool
 from bot.services.construction import BUILDINGS
 
 
+def calculate_construction_power_gain(
+    previous_level,
+    target_level,
+):
+    """
+    Calcula el poder ganado por niveles realmente construidos.
+
+    Cada nivel nuevo aporta 25 puntos.
+    Una construcción que no aumenta el nivel no aporta poder.
+    """
+    previous_level = max(0, int(previous_level))
+    target_level = max(0, int(target_level))
+
+    return max(0, target_level - previous_level) * 25
+
+
 async def finish_constructions(bot: Bot):
     pool = await get_pool()
     notifications = []
@@ -39,6 +55,31 @@ async def finish_constructions(bot: Bot):
                 target_level = item["target_level"]
                 realm_id = item["realm_id"]
 
+                # Serializar las finalizaciones del mismo reino.
+                await connection.fetchrow(
+                    """
+                    SELECT id
+                    FROM realms
+                    WHERE id = $1
+                    FOR UPDATE
+                    """,
+                    realm_id,
+                )
+
+                previous_level = await connection.fetchval(
+                    """
+                    SELECT level
+                    FROM buildings
+                    WHERE realm_id = $1
+                      AND building_type = $2
+                    FOR UPDATE
+                    """,
+                    realm_id,
+                    building_type,
+                )
+
+                previous_level = int(previous_level or 0)
+
                 await connection.execute(
                     """
                     INSERT INTO buildings (
@@ -59,14 +100,21 @@ async def finish_constructions(bot: Bot):
                     target_level,
                 )
 
-                await connection.execute(
-                    """
-                    UPDATE realms
-                    SET power = power + 25
-                    WHERE id = $1
-                    """,
-                    realm_id,
+                power_gain = calculate_construction_power_gain(
+                    previous_level,
+                    target_level,
                 )
+
+                if power_gain > 0:
+                    await connection.execute(
+                        """
+                        UPDATE realms
+                        SET power = power + $1
+                        WHERE id = $2
+                        """,
+                        power_gain,
+                        realm_id,
+                    )
 
                 await connection.execute(
                     """

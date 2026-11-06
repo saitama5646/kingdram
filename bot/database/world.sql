@@ -9,12 +9,8 @@ ALTER TABLE realms
     ADD COLUMN IF NOT EXISTS region INTEGER,
     ADD COLUMN IF NOT EXISTS position INTEGER;
 
--- Coordenadas únicas.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_realms_world_position
-ON realms(continent, region, position)
-WHERE continent IS NOT NULL
-  AND region IS NOT NULL
-  AND position IS NOT NULL;
+-- El índice único se crea después de normalizar las coordenadas.
+DROP INDEX IF EXISTS idx_realms_world_position;
 
 CREATE INDEX IF NOT EXISTS idx_realms_world_region
 ON realms(continent, region);
@@ -114,18 +110,56 @@ ON battle_reports(mission_id);
 -- Asignar posiciones a los reinos antiguos que no tengan.
 DO $$
 DECLARE
+    realm_record-- Normalizar y asignar coordenadas del mundo.
+-- Distribución: 100 continentes, 3 territorios y 20 posiciones.
+DO $$
+DECLARE
     realm_record RECORD;
     selected_continent INTEGER;
     selected_region INTEGER;
     selected_position INTEGER;
     found_position BOOLEAN;
 BEGIN
+    LOCK TABLE realms IN SHARE ROW EXCLUSIVE MODE;
+
+    -- Las coordenadas parciales o fuera de rango deben reasignarse.
+    UPDATE realms
+    SET continent = NULL,
+        region = NULL,
+        position = NULL
+    WHERE continent IS NULL
+       OR region IS NULL
+       OR position IS NULL
+       OR continent NOT BETWEEN 1 AND 100
+       OR region NOT BETWEEN 1 AND 3
+       OR position NOT BETWEEN 1 AND 20;
+
+    -- Si existen coordenadas duplicadas, conservar la del menor ID.
+    WITH ranked AS (
+        SELECT
+            id,
+            ROW_NUMBER() OVER (
+                PARTITION BY continent, region, position
+                ORDER BY id
+            ) AS duplicate_number
+        FROM realms
+        WHERE continent IS NOT NULL
+          AND region IS NOT NULL
+          AND position IS NOT NULL
+    )
+    UPDATE realms AS target
+    SET continent = NULL,
+        region = NULL,
+        position = NULL
+    FROM ranked
+    WHERE target.id = ranked.id
+      AND ranked.duplicate_number > 1;
+
+    -- Asignar una posición válida a cada reino pendiente.
     FOR realm_record IN
         SELECT id
         FROM realms
         WHERE continent IS NULL
-           OR region IS NULL
-           OR position IS NULL
         ORDER BY id
     LOOP
         found_position := FALSE;
@@ -133,10 +167,10 @@ BEGIN
         FOR selected_continent IN 1..100 LOOP
             EXIT WHEN found_position;
 
-            FOR selected_region IN 1..20 LOOP
+            FOR selected_region IN 1..3 LOOP
                 EXIT WHEN found_position;
 
-                FOR selected_position IN 1..50 LOOP
+                FOR selected_position IN 1..20 LOOP
                     IF NOT EXISTS (
                         SELECT 1
                         FROM realms
@@ -163,4 +197,44 @@ BEGIN
                 realm_record.id;
         END IF;
     END LOOP;
+END $$;
+
+-- Crear índices después de normalizar las coordenadas.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_realms_world_position
+ON realms(continent, region, position)
+WHERE continent IS NOT NULL
+  AND region IS NOT NULL
+  AND position IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_realms_world_region
+ON realms(continent, region);
+
+-- Impedir coordenadas parciales o fuera de los límites.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_realms_world_coordinates'
+          AND conrelid = 'realms'::regclass
+    ) THEN
+        ALTER TABLE realms
+        ADD CONSTRAINT chk_realms_world_coordinates
+        CHECK (
+            (
+                continent IS NULL
+                AND region IS NULL
+                AND position IS NULL
+            )
+            OR
+            (
+                continent IS NOT NULL
+                AND region IS NOT NULL
+                AND position IS NOT NULL
+                AND continent BETWEEN 1 AND 100
+                AND region BETWEEN 1 AND 3
+                AND position BETWEEN 1 AND 20
+            )
+        );
+    END IF;
 END $$;
