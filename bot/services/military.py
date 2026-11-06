@@ -61,7 +61,7 @@ UNITS = {
         "hull": 280,
         "wood": 30,
         "stone": 12,
-        "gold": 70,
+        "gold": 71,
         "food": 80,
         "seconds": 90,
         "barracks": 6,

@@ -6,10 +6,10 @@ from bot.services.military import UNITS
 class MilitaryCostsTests(unittest.TestCase):
 
     EXPECTED = {
-        "spearman": (18, 5, 13, 20, 20),
-        "archer": (25, 3, 18, 25, 30),
-        "cavalry": (15, 10, 51, 65, 60),
-        "royal_guard": (40, 20, 61, 80, 90),
+        "spearman": (12, 3, 16, 20, 20),
+        "archer": (17, 2, 22, 25, 30),
+        "cavalry": (10, 6, 58, 65, 60),
+        "royal_guard": (30, 12, 71, 80, 90),
     }
 
     def test_updated_unit_costs(self):

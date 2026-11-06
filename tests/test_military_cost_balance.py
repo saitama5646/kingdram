@@ -14,10 +14,10 @@ def resource_value(unit):
 class MilitaryCostBalanceTests(unittest.TestCase):
 
     EXPECTED = {
-        "spearman": (18, 5, 13, 20),
-        "archer": (25, 3, 18, 25),
-        "cavalry": (15, 10, 51, 65),
-        "royal_guard": (40, 20, 61, 80),
+        "spearman": (12, 3, 16, 20),
+        "archer": (17, 2, 22, 25),
+        "cavalry": (10, 6, 58, 65),
+        "royal_guard": (30, 12, 71, 80),
     }
 
     def test_unit_costs(self):

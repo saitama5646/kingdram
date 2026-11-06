@@ -147,7 +147,12 @@ async def build_main_menu(user_id):
 
         buildings = await connection.fetch(
             """
-            SELECT building_type, level
+            SELECT
+                building_type,
+                GREATEST(level - damaged_levels, 0) AS level,
+                level AS original_level,
+                damaged_levels,
+                rebuild_at
             FROM buildings
             WHERE realm_id = $1
             """,
@@ -253,6 +258,47 @@ async def build_main_menu(user_id):
             f"{format_number(amount)} "
             f"<i>(+{format_number(hourly)}/h)</i>"
         )
+
+    damaged_buildings = [
+        building
+        for building in buildings
+        if int(building["damaged_levels"] or 0) > 0
+    ]
+
+    if damaged_buildings:
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "🛠 <b>EDIFICIOS DAÑADOS</b>",
+            "",
+        ])
+
+        for building_row in damaged_buildings:
+            info = BUILDINGS.get(
+                building_row["building_type"],
+                {},
+            )
+
+            name = info.get(
+                "name",
+                building_row["building_type"],
+            )
+
+            icon = info.get("icon", "🏗")
+            original = int(building_row["original_level"])
+            effective = int(building_row["level"])
+            damaged = int(building_row["damaged_levels"] or 0)
+
+            remaining = format_remaining(
+                building_row["rebuild_at"]
+            )
+
+            lines.extend([
+                f"{icon} <b>{escape(name)}</b>",
+                f"   Nivel operativo: <b>{effective}/{original}</b>",
+                f"   Niveles dañados: <b>{damaged}</b>",
+                f"   Reconstrucción: <b>{remaining}</b>",
+            ])
 
     if vassalage:
         tribute_percent = float(
