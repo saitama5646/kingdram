@@ -15,3 +15,6 @@ env/
 
 .DS_Store
 *.log
+
+# Credenciales SSH: nunca subir al repositorio
+Yon5646*
