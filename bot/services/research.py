@@ -326,11 +326,6 @@ def get_research_effects(research_levels):
         min(5, int(research_levels.get("espionage_network", 0))),
     )
 
-    effects["spy_success_bonus"] = (
-        effects.get("spy_success_bonus", 0)
-        + network_level * 0.02
-    )
-
     effects["spy_cost_reduction"] = (
         0.05 if network_level >= 2 else 0.0
     )

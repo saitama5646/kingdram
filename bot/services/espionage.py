@@ -408,6 +408,7 @@ async def get_spy_dashboard(user_id):
                 er.id,
                 er.mission_type,
                 er.success,
+                er.spies_sent,
                 er.spies_lost,
                 er.created_at,
                 er.intelligence,

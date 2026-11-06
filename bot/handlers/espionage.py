@@ -77,6 +77,34 @@ def target_keyboard(target_id):
     return builder.as_markup()
 
 
+
+def mission_quantity_keyboard(target_id, mission_type):
+    builder = InlineKeyboardBuilder()
+
+    for quantity in (1, 5, 10):
+        builder.button(
+            text=f"🕵 Enviar {quantity} espía(s)",
+            callback_data=(
+                f"espionage:quantity:{target_id}:"
+                f"{mission_type}:{quantity}"
+            ),
+        )
+
+    builder.button(
+        text="↩ Volver a misiones",
+        callback_data=f"espionage:target:{target_id}",
+    )
+
+    builder.button(
+        text="⌂ Menú principal",
+        callback_data="main_menu",
+    )
+
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+
 async def render_espionage(context):
     data = await get_spy_dashboard(
         context.from_user.id,
@@ -246,13 +274,11 @@ async def target_handler(callback: CallbackQuery):
     )
 
 
+
 @router.callback_query(F.data.startswith("espionage:mission:"))
 async def mission_handler(callback: CallbackQuery):
     try:
-        _, _, target_id, mission_type = (
-            callback.data.split(":")
-        )
-
+        _, _, target_id, mission_type = callback.data.split(":")
         target_id = int(target_id)
 
     except (ValueError, IndexError):
@@ -262,11 +288,63 @@ async def mission_handler(callback: CallbackQuery):
         )
         return
 
+    mission_name = MISSION_TYPES.get(
+        mission_type,
+        mission_type,
+    )
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        "🕵 <b>PREPARAR MISIÓN</b>\n\n"
+        f"📋 Tipo: <b>{escape(mission_name)}</b>\n\n"
+        "Selecciona cuántos espías enviar.",
+        reply_markup=mission_quantity_keyboard(
+            target_id,
+            mission_type,
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(
+    F.data.startswith("espionage:quantity:")
+)
+async def mission_quantity_handler(
+    callback: CallbackQuery,
+):
+    try:
+        (
+            _,
+            _,
+            _,
+            target_id,
+            mission_type,
+            quantity,
+        ) = callback.data.split(":")
+
+        target_id = int(target_id)
+        quantity = int(quantity)
+
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Cantidad o misión inválida.",
+            show_alert=True,
+        )
+        return
+
+    if quantity not in (1, 5, 10):
+        await callback.answer(
+            "Puedes enviar 1, 5 o 10 espías.",
+            show_alert=True,
+        )
+        return
+
     success, message = await launch_spy_mission(
         callback.from_user.id,
         target_id,
         mission_type,
-        1,
+        quantity,
     )
 
     await callback.answer(
@@ -276,6 +354,7 @@ async def mission_handler(callback: CallbackQuery):
 
     if success:
         await render_espionage(callback)
+
 
 
 @router.callback_query(F.data == "espionage:reports")
@@ -296,8 +375,11 @@ async def reports_handler(callback: CallbackQuery):
         "",
     ]
 
+    builder = InlineKeyboardBuilder()
+
     if not data["reports"]:
         lines.append("Todavía no tienes informes.")
+
     else:
         for report in data["reports"]:
             mission_name = MISSION_TYPES.get(
@@ -311,22 +393,48 @@ async def reports_handler(callback: CallbackQuery):
                 else "Misión fallida"
             )
 
-            lines.append(
-                f"• <b>{escape(report['target_name'])}</b>\n"
-                f"  Misión: {mission_name}\n"
-                f"  Resultado: {result}\n"
-                f"  Espías perdidos: {report['spies_lost']}\n"
+            spies_sent = int(
+                report.get("spies_sent", 0) or 0
             )
 
-    builder = InlineKeyboardBuilder()
+            spies_lost = int(
+                report.get("spies_lost", 0) or 0
+            )
+
+            spies_returned = max(
+                0,
+                spies_sent - spies_lost,
+            )
+
+            lines.append(
+                f"• <b>{escape(report['target_name'])}</b>\n"
+                f"  Misión: {escape(mission_name)}\n"
+                f"  Resultado: {result}\n"
+                f"  Enviados: {spies_sent}\n"
+                f"  Perdidos: {spies_lost}\n"
+                f"  Retornados: {spies_returned}\n"
+            )
+
+            builder.button(
+                text=(
+                    f"📄 Informe #{report['id']} — "
+                    f"{report['target_name']}"
+                ),
+                callback_data=(
+                    f"espionage:report:{report['id']}"
+                ),
+            )
+
     builder.button(
         text="↩ Espionaje",
         callback_data="espionage",
     )
+
     builder.button(
         text="⌂ Menú principal",
         callback_data="main_menu",
     )
+
     builder.adjust(1)
 
     await callback.answer()
@@ -334,4 +442,189 @@ async def reports_handler(callback: CallbackQuery):
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=builder.as_markup(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(
+    F.data.startswith("espionage:report:")
+)
+async def report_detail_handler(
+    callback: CallbackQuery,
+):
+    try:
+        report_id = int(
+            callback.data.split(":")[-1]
+        )
+
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Informe inválido.",
+            show_alert=True,
+        )
+        return
+
+    data = await get_spy_dashboard(
+        callback.from_user.id,
+    )
+
+    if not data:
+        await callback.answer(
+            "Primero debes fundar un reino.",
+            show_alert=True,
+        )
+        return
+
+    report = next(
+        (
+            item
+            for item in data["reports"]
+            if int(item["id"]) == report_id
+        ),
+        None,
+    )
+
+    if not report:
+        await callback.answer(
+            "El informe no existe o no te pertenece.",
+            show_alert=True,
+        )
+        return
+
+    mission_name = MISSION_TYPES.get(
+        report["mission_type"],
+        report["mission_type"],
+    )
+
+    spies_sent = int(
+        report.get("spies_sent", 0) or 0
+    )
+
+    spies_lost = int(
+        report.get("spies_lost", 0) or 0
+    )
+
+    spies_returned = max(
+        0,
+        spies_sent - spies_lost,
+    )
+
+    result = (
+        "ÉXITO"
+        if report["success"]
+        else "MISIÓN FALLIDA"
+    )
+
+    lines = [
+        "📜 <b>INFORME DETALLADO</b>",
+        "",
+        f"🏰 Objetivo: <b>{escape(report['target_name'])}</b>",
+        f"📋 Misión: <b>{escape(mission_name)}</b>",
+        f"🎯 Resultado: <b>{result}</b>",
+        "",
+        "<b>ESTADO DE LOS AGENTES</b>",
+        f"🕵 Espías enviados: {spies_sent}",
+        f"❌ Espías perdidos: {spies_lost}",
+        f"↩ Espías retornados: {spies_returned}",
+        "",
+    ]
+
+    intelligence = report.get("intelligence") or {}
+
+    if isinstance(intelligence, str):
+        import json
+
+        try:
+            intelligence = json.loads(intelligence)
+        except (ValueError, TypeError):
+            intelligence = {}
+
+    if report["success"] and intelligence:
+        lines.append("<b>INFORMACIÓN OBTENIDA</b>")
+
+        labels = {
+            "wood": "Madera",
+            "stone": "Piedra",
+            "gold": "Oro",
+            "food": "Alimentos",
+            "army": "Ejército",
+            "buildings": "Edificios",
+            "research": "Investigaciones",
+        }
+
+        for key, value in intelligence.items():
+            label = labels.get(key, key.title())
+
+            if isinstance(value, list):
+                lines.append(
+                    f"\n<b>{escape(label)}</b>"
+                )
+
+                if not value:
+                    lines.append("• No se encontraron datos.")
+
+                for item in value:
+                    if isinstance(item, dict):
+                        details = " — ".join(
+                            f"{escape(str(k))}: "
+                            f"{escape(str(v))}"
+                            for k, v in item.items()
+                        )
+
+                        lines.append(f"• {details}")
+
+                    else:
+                        lines.append(
+                            f"• {escape(str(item))}"
+                        )
+
+            elif isinstance(value, dict):
+                lines.append(
+                    f"\n<b>{escape(label)}</b>"
+                )
+
+                for subkey, subvalue in value.items():
+                    lines.append(
+                        f"• {escape(str(subkey))}: "
+                        f"{escape(str(subvalue))}"
+                    )
+
+            else:
+                lines.append(
+                    f"• <b>{escape(label)}:</b> "
+                    f"{escape(str(value))}"
+                )
+
+    elif not report["success"]:
+        lines.append(
+            "La misión no obtuvo información "
+            "del reino objetivo."
+        )
+
+    else:
+        lines.append(
+            "No hay información registrada "
+            "en este informe."
+        )
+
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="↩ Volver a informes",
+        callback_data="espionage:reports",
+    )
+
+    builder.button(
+        text="⌂ Menú principal",
+        callback_data="main_menu",
+    )
+
+    builder.adjust(1)
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML",
     )
