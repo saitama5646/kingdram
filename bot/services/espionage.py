@@ -50,7 +50,7 @@ def calculate_spy_success(
         - max(0.0, float(counter_bonus))
     )
 
-    return clamp(chance, 0.15, 0.90)
+    return clamp(chance, 0.15, 0.80)
 
 
 def calculate_spy_training_duration(

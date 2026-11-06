@@ -19,7 +19,7 @@ class EspionageTests(unittest.TestCase):
 
         self.assertLessEqual(
             calculate_spy_success(100),
-            0.90,
+            0.80,
         )
 
     def test_infiltration_increases_success(self):
@@ -48,7 +48,7 @@ class EspionageTests(unittest.TestCase):
                 100,
                 infiltration_bonus=1,
             ),
-            0.90,
+            0.80,
         )
 
     def test_probability_clamps_at_minimum(self):
