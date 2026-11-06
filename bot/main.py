@@ -19,6 +19,7 @@ from bot.handlers.kingdom import router as kingdom_router
 from bot.handlers.buildings import router as buildings_router
 from bot.handlers.army import router as army_router
 from bot.handlers.economy import router as economy_router
+from bot.handlers.bazaar import router as bazaar_router
 from bot.handlers.territory import router as territory_router
 from bot.handlers.world import router as world_router
 from bot.handlers.ranking import router as ranking_router
@@ -115,6 +116,7 @@ async def main():
         dp.include_router(buildings_router)
         dp.include_router(army_router)
         dp.include_router(economy_router)
+        dp.include_router(bazaar_router)
         dp.include_router(territory_router)
         dp.include_router(world_router)
         dp.include_router(ranking_router)

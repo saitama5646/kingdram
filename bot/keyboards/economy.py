@@ -13,6 +13,12 @@ def economy_keyboard():
             ],
             [
                 InlineKeyboardButton(
+                    text="🏺 Bazar del Reino",
+                    callback_data="bazaar"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🏗 Administrar edificios",
                     callback_data="buildings"
                 )
