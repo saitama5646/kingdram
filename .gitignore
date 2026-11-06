@@ -18,3 +18,12 @@ env/
 
 # Credenciales SSH: nunca subir al repositorio
 Yon5646*
+
+# Copias de seguridad locales: no versionar
+*.bak
+*.bak_*
+*.backup
+*.backup_*
+*.before_*
+*.orig
+*.tmp
