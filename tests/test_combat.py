@@ -651,6 +651,79 @@ class CombatTests(unittest.TestCase):
         self.assertEqual(targets[0]["hull_damage"], 0)
         self.assertFalse(targets[0]["destroyed"])
 
+    def test_round_attacks_are_simultaneous(self):
+        from bot.workers.missions import (
+            resolve_battle_round_detailed,
+        )
+
+        attackers = [
+            {
+                "unit_type": "spearman",
+                "attack": 100,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+                "quantity": 1,
+            },
+        ]
+
+        defenders = [
+            {
+                "unit_type": "archer",
+                "attack": 30,
+                "shield": 0,
+                "hull": 50,
+                "hull_damage": 0,
+                "destroyed": False,
+                "quantity": 1,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ):
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                with patch(
+                    "bot.workers.missions.random.random",
+                    return_value=1.0,
+                ):
+                    (
+                        attackers_after,
+                        defenders_after,
+                        attacker_damage,
+                        defender_damage,
+                        details,
+                    ) = resolve_battle_round_detailed(
+                        attackers,
+                        defenders,
+                        1.0,
+                        1.0,
+                    )
+
+        # El atacante destruye al defensor durante la salva.
+        self.assertEqual(defenders_after, [])
+
+        # Pero el defensor ya tenía su salva preparada:
+        # sus disparos de esta ronda también deben resolverse.
+        self.assertEqual(len(attackers_after), 1)
+        self.assertEqual(
+            attackers_after[0]["hull_damage"],
+            30,
+        )
+
+        self.assertEqual(attacker_damage, 50)
+        self.assertEqual(defender_damage, 30)
+
+        self.assertEqual(
+            details["attacker_hull_damage_received"],
+            30,
+        )
+
     def test_destroyed_units_do_not_receive_more_shots(self):
         shooters = [
             {"attack": 100, "destroyed": False},
