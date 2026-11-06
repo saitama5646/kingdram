@@ -247,6 +247,107 @@ def aggregate_combat_units(units):
     ]
 
 
+def validate_combat_state(units, original, side):
+    """
+    Comprueba que el estado de combate sea consistente.
+
+    Garantiza:
+    - Ninguna cantidad negativa o nula dentro de un grupo.
+    - Ninguna unidad desconocida.
+    - Ningún superviviente por encima de la cantidad inicial.
+    - Daño al casco dentro de sus límites.
+    - Daños acumulados no negativos.
+    """
+
+    original_quantities = {}
+
+    for troop in original:
+        unit_type = troop["unit_type"]
+        quantity = int(troop.get("quantity", 0))
+
+        if quantity < 0:
+            raise RuntimeError(
+                f"{side}: cantidad inicial negativa "
+                f"para {unit_type}."
+            )
+
+        original_quantities[unit_type] = (
+            original_quantities.get(unit_type, 0)
+            + quantity
+        )
+
+    living_quantities = {}
+
+    for unit in units:
+        unit_type = unit["unit_type"]
+        quantity = int(unit.get("quantity", 1))
+
+        if quantity <= 0:
+            raise RuntimeError(
+                f"{side}: grupo de {unit_type} "
+                "con cantidad nula o negativa."
+            )
+
+        if unit_type not in original_quantities:
+            raise RuntimeError(
+                f"{side}: unidad desconocida "
+                f"durante el combate: {unit_type}."
+            )
+
+        hull = float(unit.get("hull", 100))
+        hull_damage = float(unit.get("hull_damage", 0))
+
+        if hull <= 0:
+            raise RuntimeError(
+                f"{side}: casco inválido para {unit_type}."
+            )
+
+        if hull_damage < 0 or hull_damage > hull + 1e-9:
+            raise RuntimeError(
+                f"{side}: daño de casco inconsistente "
+                f"para {unit_type}."
+            )
+
+        for damage_key in (
+            "round_shield_damage",
+            "round_hull_damage",
+        ):
+            damage = float(unit.get(damage_key, 0))
+
+            if damage < 0:
+                raise RuntimeError(
+                    f"{side}: daño negativo en "
+                    f"{damage_key} para {unit_type}."
+                )
+
+        if not unit.get("destroyed", False):
+            living_quantities[unit_type] = (
+                living_quantities.get(unit_type, 0)
+                + quantity
+            )
+
+    for unit_type, remaining in living_quantities.items():
+        initial = original_quantities[unit_type]
+
+        if remaining > initial:
+            raise RuntimeError(
+                f"{side}: supervivientes de {unit_type} "
+                f"({remaining}) exceden la cantidad inicial "
+                f"({initial})."
+            )
+
+    initial_total = sum(original_quantities.values())
+    remaining_total = sum(living_quantities.values())
+
+    if remaining_total > initial_total:
+        raise RuntimeError(
+            f"{side}: el total superviviente "
+            "excede el total inicial."
+        )
+
+    return initial_total - remaining_total
+
+
 def resolve_volley(shooters, targets, morale):
     """
     Resuelve una salva con selección ponderada de objetivos.
@@ -1444,6 +1545,18 @@ async def process_arrival(connection, mission):
             defender_combat_units,
             attacker_morale,
             defender_morale,
+        )
+
+        validate_combat_state(
+            attacker_combat_units,
+            attacker_original,
+            "Atacante",
+        )
+
+        validate_combat_state(
+            defender_combat_units,
+            defender_original,
+            "Defensor",
         )
 
         attackers = aggregate_combat_units(attacker_combat_units)
