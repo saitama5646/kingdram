@@ -8,10 +8,10 @@ from bot.services.storage import get_storage_capacity
 router = Router()
 
 RESOURCES = {
-    "wood": {"name": "Madera", "icon": "🪵", "value": 35},
-    "stone": {"name": "Piedra", "icon": "🪨", "value": 28},
-    "gold": {"name": "Oro", "icon": "🪙", "value": 12},
-    "food": {"name": "Alimentos", "icon": "🌾", "value": 45},
+    "wood": {"name": "Madera", "icon": "🪵", "value": 6},
+    "stone": {"name": "Piedra", "icon": "🪨", "value": 12},
+    "gold": {"name": "Oro", "icon": "🪙", "value": 36},
+    "food": {"name": "Alimentos", "icon": "🌾", "value": 4},
 }
 
 PRESET_AMOUNTS = (50, 250, 1000, 5000)
@@ -19,6 +19,13 @@ PRESET_AMOUNTS = (50, 250, 1000, 5000)
 
 def fmt(value):
     return f"{int(value):,}".replace(",", ".")
+
+def calculate_exchange_amount(amount, source, target):
+    return (
+        int(amount) * RESOURCES[source]["value"]
+        // RESOURCES[target]["value"]
+    )
+
 
 
 def resource_name(resource):
@@ -114,10 +121,7 @@ def amount_keyboard(source, target, available):
     rows = []
 
     for amount in amounts:
-        received = (
-            amount * RESOURCES[source]["value"]
-            // RESOURCES[target]["value"]
-        )
+        received = calculate_exchange_amount(amount, source, target)
 
         rows.append([
             button(
@@ -234,8 +238,7 @@ async def show_bazaar(callback):
         "Intercambia excedentes por los recursos "
         "que necesitas.",
         "",
-        "<i>Las equivalencias se calculan usando "
-        "el valor comercial de cada recurso.</i>",
+        "<i>La madera es abundante, la piedra tiene un valor intermedio y el oro es el recurso más escaso.</i>",
     ])
 
     await callback.answer()
@@ -423,10 +426,7 @@ async def bazaar_amount(callback: CallbackQuery):
         )
         return
 
-    received = (
-        amount * RESOURCES[source]["value"]
-        // RESOURCES[target]["value"]
-    )
+    received = calculate_exchange_amount(amount, source, target)
 
     if received <= 0:
         await callback.answer(
@@ -541,10 +541,7 @@ async def bazaar_confirm(callback: CallbackQuery):
         )
         return
 
-    received = (
-        amount * RESOURCES[source]["value"]
-        // RESOURCES[target]["value"]
-    )
+    received = calculate_exchange_amount(amount, source, target)
 
     if received <= 0:
         await callback.answer(
