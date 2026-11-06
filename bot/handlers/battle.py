@@ -770,6 +770,28 @@ async def battle_report_handler(callback: CallbackQuery):
         "━━━━━━━━━━━━━━━━━━",
         result_title,
         f"🔁 Rondas disputadas: <b>{number(report['rounds'])}</b>",
+        *(
+            [
+                "",
+                "⏱️ <b>Motivo del resultado:</b>",
+                "Ambos ejércitos conservaron supervivientes "
+                "al alcanzar el límite de rondas.",
+                "El combate terminó sin una eliminación total. "
+                "No se considera una victoria militar.",
+            ]
+            if report["outcome"] == "inconclusive"
+            else []
+        ),
+        *(
+            [
+                "",
+                "☠️ <b>Motivo del resultado:</b>",
+                "Ambos ejércitos fueron eliminados durante "
+                "el enfrentamiento.",
+            ]
+            if report["outcome"] == "mutual_destruction"
+            else []
+        ),
         "",
         "━━━━━━━━━━━━━━━━━━",
         "⚔ <b>FUERZAS ENFRENTADAS</b>",
@@ -831,6 +853,12 @@ async def battle_report_handler(callback: CallbackQuery):
         "",
         f"📉 Infraestructura dañada: <b>{damage:.1f}%</b>",
     ])
+
+    if report["outcome"] != "attacker_victory":
+        lines.append(
+            "ℹ️ No se aplicaron daños de infraestructura "
+            "porque el atacante no obtuvo una victoria."
+        )
 
     infrastructure_log = report["infrastructure_log"] or []
 
