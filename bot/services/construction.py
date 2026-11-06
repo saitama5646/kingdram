@@ -56,10 +56,19 @@ BUILDINGS = {
     "warehouse": {
         "name": "Almacén",
         "icon": "🏚️",
-        "description": "Aumenta la capacidad de almacenamiento de madera, piedra y oro.",
+        "description": "Aumenta la capacidad de almacenamiento de madera y piedra.",
         "resource": None,
         "base_cost": {"wood": 500, "stone": 350, "gold": 80},
         "base_time": 240,
+        "production": 0,
+    },
+    "treasury": {
+        "name": "Tesorería",
+        "icon": "🏦",
+        "description": "Protege y amplía las reservas de oro del reino.",
+        "resource": None,
+        "base_cost": {"wood": 450, "stone": 250, "gold": 40},
+        "base_time": 180,
         "production": 0,
     },
     "granary": {

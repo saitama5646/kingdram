@@ -6,6 +6,7 @@ BASE_CAPACITY = {
 }
 
 WAREHOUSE_BONUS = 10000
+TREASURY_BONUS = 10000
 GRANARY_BONUS = 15000
 
 
@@ -16,6 +17,7 @@ def get_storage_capacity(buildings):
     }
 
     warehouse_level = levels.get("warehouse", 0)
+    treasury_level = levels.get("treasury", 0)
     granary_level = levels.get("granary", 0)
 
     return {
@@ -29,7 +31,7 @@ def get_storage_capacity(buildings):
         ),
         "gold": (
             BASE_CAPACITY["gold"]
-            + warehouse_level * WAREHOUSE_BONUS
+            + treasury_level * TREASURY_BONUS
         ),
         "food": (
             BASE_CAPACITY["food"]

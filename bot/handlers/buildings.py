@@ -415,9 +415,15 @@ async def building_detail_handler(callback: CallbackQuery):
             [
                 "",
                 "📦 <b>CAPACIDAD ADICIONAL</b>",
-                "Por este nivel: <b>+10.000</b> madera, piedra y oro.",
+                "Por este nivel: <b>+10.000</b> madera y piedra.",
             ]
             if building_type == "warehouse"
+            else [
+                "",
+                "📦 <b>CAPACIDAD ADICIONAL</b>",
+                "Por este nivel: <b>+10.000</b> de oro.",
+            ]
+            if building_type == "treasury"
             else [
                 "",
                 "📦 <b>CAPACIDAD ADICIONAL</b>",

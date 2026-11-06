@@ -203,6 +203,16 @@ CREATE TABLE IF NOT EXISTS buildings (
     CHECK (level >= 1)
 );
 
+-- Trasladar la capacidad histórica del almacén a la Tesorería.
+-- Se ejecuta de forma segura: nunca reemplaza una Tesorería existente.
+INSERT INTO buildings (realm_id, building_type, level)
+SELECT realm_id, 'treasury', level
+FROM buildings
+WHERE building_type = 'warehouse'
+  AND level > 0
+ON CONFLICT (realm_id, building_type) DO NOTHING;
+
+
 
 -- ---------------------------------------------------------
 -- 6. TERRITORIOS
