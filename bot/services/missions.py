@@ -22,10 +22,28 @@ TRAVEL_FOOD_MULTIPLIER = 12
 
 
 def validate_troops(troops):
+    if not isinstance(troops, dict):
+        raise ValueError(
+            "La selección de tropas debe ser válida."
+        )
+
     selected = {}
 
     for unit_type in UNIT_ORDER:
-        quantity = int(troops.get(unit_type, 0))
+        raw_quantity = troops.get(unit_type, 0)
+
+        try:
+            quantity = int(raw_quantity)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(
+                f"Cantidad inválida para {unit_type}."
+            )
+
+        if isinstance(raw_quantity, float):
+            if not raw_quantity.is_integer():
+                raise ValueError(
+                    f"Cantidad fraccionaria para {unit_type}."
+                )
 
         if quantity < 0:
             raise ValueError(
@@ -33,6 +51,14 @@ def validate_troops(troops):
             )
 
         selected[unit_type] = quantity
+
+    unknown_units = set(troops) - set(UNIT_ORDER)
+
+    if unknown_units:
+        raise ValueError(
+            "Se recibieron tipos de unidad desconocidos: "
+            + ", ".join(sorted(map(str, unknown_units)))
+        )
 
     if sum(selected.values()) <= 0:
         raise ValueError(
@@ -461,7 +487,9 @@ async def recall_mission(user_id, mission_id):
                     speed,
                 )
 
-            await connection.execute(
+            # Transición protegida: solo retirar una misión
+            # que continúe viajando como ataque.
+            transition_result = await connection.execute(
                 """
                 UPDATE military_missions
                 SET mission_type = 'return',
@@ -469,10 +497,21 @@ async def recall_mission(user_id, mission_id):
                     arrival_at =
                         NOW() + $1 * INTERVAL '1 second'
                 WHERE id = $2
+                  AND status = 'travelling'
+                  AND mission_type = 'attack'
+                  AND arrival_at > NOW()
                 """,
                 return_seconds,
                 mission_id,
             )
+
+            if transition_result != "UPDATE 1":
+                raise RuntimeError(
+                    f"Misión {mission_id}: no se pudo "
+                    "confirmar la retirada. "
+                    f"Resultado SQL: {transition_result}. "
+                    "La transacción debe revertirse."
+                )
 
             return True, {
                 "mission_id": mission_id,
