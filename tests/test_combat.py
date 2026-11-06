@@ -740,13 +740,71 @@ class CombatTests(unittest.TestCase):
             },
         ]
 
-        with patch("bot.workers.missions.random.choice", side_effect=[0]):
-            with patch("bot.workers.missions.random.uniform", return_value=1.0):
-                with patch("bot.workers.missions.random.random", return_value=1.0):
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ) as target_roll:
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                with patch(
+                    "bot.workers.missions.random.random",
+                    return_value=1.0,
+                ):
                     resolve_volley(shooters, targets, 1.0)
 
+        target_roll.assert_called_once_with(1)
         self.assertTrue(targets[0]["destroyed"])
 
+
+    def test_aggregate_combat_units_ignores_zero_quantity(self):
+        units = [
+            {
+                "unit_type": "spearman",
+                "quantity": 0,
+                "destroyed": False,
+            },
+            {
+                "unit_type": "archer",
+                "quantity": 3,
+                "destroyed": False,
+            },
+        ]
+
+        self.assertEqual(
+            aggregate_combat_units(units),
+            [{"unit_type": "archer", "quantity": 3}],
+        )
+
+    def test_zero_quantity_shooter_does_not_fire(self):
+        shooters = [
+            {
+                "unit_type": "archer",
+                "attack": 100,
+                "quantity": 0,
+                "destroyed": False,
+            },
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange"
+        ) as target_roll:
+            resolve_volley(shooters, targets, 1.0)
+
+        target_roll.assert_not_called()
+        self.assertEqual(targets[0]["hull_damage"], 0)
+        self.assertFalse(targets[0]["destroyed"])
 
     def test_large_army_is_stored_as_combat_groups(self):
         units = expand_combat_units([

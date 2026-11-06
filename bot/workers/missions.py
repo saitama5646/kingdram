@@ -228,7 +228,10 @@ def aggregate_combat_units(units):
             continue
 
         unit_type = unit["unit_type"]
-        quantity = max(1, int(unit.get("quantity", 1)))
+        quantity = max(0, int(unit.get("quantity", 1)))
+
+        if quantity <= 0:
+            continue
 
         quantities[unit_type] = (
             quantities.get(unit_type, 0) + quantity
@@ -373,9 +376,12 @@ def resolve_volley(shooters, targets, morale):
             continue
 
         shooter_quantity = max(
-            1,
+            0,
             int(shooter.get("quantity", 1)),
         )
+
+        if shooter_quantity <= 0:
+            continue
 
         base_attack = max(
             0.0,
