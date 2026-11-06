@@ -13,7 +13,7 @@ from bot.services.economy import (
     get_daily_production,
 )
 from bot.workers.production import calculate_production
-from bot.handlers.bazaar import (
+from bot.services.bazaar import (
     RESOURCES,
     calculate_exchange_amount,
 )

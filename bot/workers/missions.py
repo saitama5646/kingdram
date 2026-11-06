@@ -1181,7 +1181,7 @@ async def save_attacker_survivors(
     remaining = survivor_map(survivors)
 
     for troop in original:
-        await connection.execute(
+        result = await connection.execute(
             """
             UPDATE military_mission_units
             SET surviving_quantity = $1
@@ -1192,6 +1192,13 @@ async def save_attacker_survivors(
             mission_id,
             troop["unit_type"],
         )
+
+        if result != "UPDATE 1":
+            raise RuntimeError(
+                f"Misión {mission_id}: no se pudo guardar "
+                f"la supervivencia de {troop['unit_type']}. "
+                f"Resultado SQL: {result}"
+            )
 
 
 async def save_defender_survivors(
@@ -1207,7 +1214,7 @@ async def save_defender_survivors(
         quantity = remaining.get(unit_type, 0)
 
         if quantity <= 0:
-            await connection.execute(
+            result = await connection.execute(
                 """
                 DELETE FROM army
                 WHERE realm_id = $1
@@ -1216,8 +1223,15 @@ async def save_defender_survivors(
                 realm_id,
                 unit_type,
             )
+
+            if result != "DELETE 1":
+                raise RuntimeError(
+                    f"Reino {realm_id}: no se pudo eliminar "
+                    f"la unidad defensora {unit_type}. "
+                    f"Resultado SQL: {result}"
+                )
         else:
-            await connection.execute(
+            result = await connection.execute(
                 """
                 UPDATE army
                 SET quantity = $1
@@ -1228,6 +1242,13 @@ async def save_defender_survivors(
                 realm_id,
                 unit_type,
             )
+
+            if result != "UPDATE 1":
+                raise RuntimeError(
+                    f"Reino {realm_id}: no se pudo guardar "
+                    f"la cantidad superviviente de {unit_type}. "
+                    f"Resultado SQL: {result}"
+                )
 
 
 async def save_report(

@@ -7,26 +7,16 @@ from bot.services.storage import get_storage_capacity
 
 router = Router()
 
-RESOURCES = {
-    "wood": {"name": "Madera", "icon": "🪵", "value": 6},
-    "stone": {"name": "Piedra", "icon": "🪨", "value": 12},
-    "gold": {"name": "Oro", "icon": "🪙", "value": 36},
-    "food": {"name": "Alimentos", "icon": "🌾", "value": 7},
-}
+from bot.services.bazaar import (
+    RESOURCES,
+    calculate_exchange_amount,
+)
 
 PRESET_AMOUNTS = (50, 250, 1000, 5000)
 
 
 def fmt(value):
     return f"{int(value):,}".replace(",", ".")
-
-def calculate_exchange_amount(amount, source, target):
-    return (
-        int(amount) * RESOURCES[source]["value"]
-        // RESOURCES[target]["value"]
-    )
-
-
 
 def resource_name(resource):
     info = RESOURCES[resource]
