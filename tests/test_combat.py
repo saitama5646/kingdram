@@ -305,7 +305,7 @@ class CombatTests(unittest.TestCase):
 
     def test_explosion_probability_uses_remaining_hull(self):
         shooters = [
-            {"attack": 40, "destroyed": False},
+            {"attack": 80, "destroyed": False},
         ]
 
         targets = [
@@ -320,14 +320,13 @@ class CombatTests(unittest.TestCase):
 
         with patch("bot.workers.missions.random.randrange", return_value=0):
             with patch("bot.workers.missions.random.uniform", return_value=1.0):
-                with patch("bot.workers.missions.random.random", return_value=0.39):
+                with patch("bot.workers.missions.random.random", return_value=0.79):
                     resolve_volley(shooters, targets, 1.0)
 
         self.assertTrue(targets[0]["destroyed"])
-
-    def test_unit_at_exactly_seventy_percent_hull_does_not_roll_explosion(self):
+    def test_unit_at_exactly_thirty_percent_hull_does_not_roll_explosion(self):
         shooters = [
-            {"attack": 30, "destroyed": False},
+            {"attack": 70, "destroyed": False},
         ]
 
         targets = [
@@ -347,7 +346,6 @@ class CombatTests(unittest.TestCase):
 
         random_roll.assert_not_called()
         self.assertFalse(targets[0]["destroyed"])
-
     def test_both_armies_fire_before_losses_are_removed(self):
         attackers = [
             {

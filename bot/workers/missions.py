@@ -337,7 +337,7 @@ def resolve_volley(shooters, targets, morale):
             maximum_hull - target["hull_damage"],
         )
 
-        if remaining_hull_after_hit < maximum_hull * 0.70:
+        if remaining_hull_after_hit < maximum_hull * 0.30:
             destruction_chance = max(
                 0.0,
                 min(
