@@ -153,6 +153,25 @@ async def decide_vassalage_request(
                     "Solicitud inexistente o ya resuelta."
                 )
 
+            # Bloquear ambos reinos por ID ascendente antes de validar
+            # o aceptar la relación.
+            locked_realms = await connection.fetch(
+                """
+                SELECT id
+                FROM realms
+                WHERE id = ANY($1::BIGINT[])
+                ORDER BY id
+                FOR UPDATE
+                """,
+                [
+                    request["lord_realm_id"],
+                    request["vassal_realm_id"],
+                ],
+            )
+
+            if len(locked_realms) != 2:
+                return False, "Uno de los reinos ya no existe."
+
             if accept:
                 if await would_create_vassalage_cycle(
                     connection,
@@ -162,6 +181,24 @@ async def decide_vassalage_request(
                     return False, (
                         "Solicitud rechazada: produciría un ciclo "
                         "de vasallaje."
+                    )
+
+                # Revalidar que el reino vasallo no haya
+                # adquirido otro señor mientras esperaba.
+                active_relation = await connection.fetchrow(
+                    """
+                    SELECT id
+                    FROM vassalage_relations
+                    WHERE vassal_realm_id = $1
+                      AND status = 'active'
+                    FOR UPDATE
+                    """,
+                    request["vassal_realm_id"],
+                )
+
+                if active_relation:
+                    return False, (
+                        "Este reino ya tiene un señor feudal."
                     )
 
                 # Cancelar una petición inversa pendiente.
