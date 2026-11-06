@@ -1462,10 +1462,84 @@ def validate_survivor_quantities(original, survivors, side):
     return initial_total - remaining_total
 
 
+def validate_mission_roster(troops, side, allow_empty=False):
+    """
+    Valida el roster de tropas antes de iniciar el combate.
+
+    Detecta:
+    - Tipos de unidad inexistentes.
+    - Cantidades negativas, nulas o inválidas.
+    - Tipos de unidad repetidos en el roster.
+    - Ejércitos atacantes vacíos.
+    """
+
+    seen_types = set()
+    total_quantity = 0
+
+    for troop in troops:
+        unit_type = troop.get("unit_type")
+        quantity = troop.get("quantity")
+
+        if unit_type not in UNITS:
+            raise RuntimeError(
+                f"{side}: tipo de unidad desconocido: "
+                f"{unit_type!r}."
+            )
+
+        if unit_type in seen_types:
+            raise RuntimeError(
+                f"{side}: tipo de unidad duplicado "
+                f"en el roster: {unit_type}."
+            )
+
+        seen_types.add(unit_type)
+
+        try:
+            quantity = int(quantity)
+        except (TypeError, ValueError, OverflowError):
+            raise RuntimeError(
+                f"{side}: cantidad inválida para "
+                f"{unit_type}: {quantity!r}."
+            )
+
+        if quantity <= 0:
+            raise RuntimeError(
+                f"{side}: cantidad no positiva "
+                f"para {unit_type}: {quantity}."
+            )
+
+        total_quantity += quantity
+
+    if total_quantity <= 0 and not allow_empty:
+        raise RuntimeError(
+            f"{side}: el ejército no contiene "
+            "unidades válidas."
+        )
+
+    return total_quantity
+
+
 async def process_arrival(connection, mission):
-    mission_id = mission["id"]
+    mission_id = int(mission["id"])
+
+    if (
+        mission["status"] != "travelling"
+        or mission["mission_type"] != "attack"
+    ):
+        raise RuntimeError(
+            f"Misión {mission_id}: estado inválido para combate. "
+            f"status={mission['status']}, "
+            f"mission_type={mission['mission_type']}."
+        )
+
     attacker_realm_id = mission["attacker_realm_id"]
     defender_realm_id = mission["defender_realm_id"]
+
+    if attacker_realm_id == defender_realm_id:
+        raise RuntimeError(
+            f"Misión {mission_id}: atacante y defensor "
+            "no pueden ser el mismo reino."
+        )
 
     # Bloquear los reinos implicados en orden ascendente.
     # Los combates simultáneos obtienen locks en el mismo orden.
@@ -1523,6 +1597,20 @@ async def process_arrival(connection, mission):
         }
         for row in defender_rows
     ]
+
+    # Validar ambos ejércitos antes de calcular poderes,
+    # expandir unidades o comenzar la primera ronda.
+    validate_mission_roster(
+        attackers,
+        "Atacante",
+        allow_empty=False,
+    )
+
+    validate_mission_roster(
+        defenders,
+        "Defensor",
+        allow_empty=True,
+    )
 
     attacker_original = [dict(troop) for troop in attackers]
     defender_original = [dict(troop) for troop in defenders]
@@ -1788,17 +1876,29 @@ async def process_arrival(connection, mission):
             return_speed,
         )
 
-    await connection.execute(
+    # Transición protegida: una misión solo puede pasar a retorno
+    # desde travelling/attack. Evita sobrescribir un estado que
+    # haya cambiado inesperadamente durante la resolución.
+    transition_result = await connection.execute(
         """
         UPDATE military_missions
         SET status = 'returning',
             mission_type = 'return',
             arrival_at = NOW() + $1 * INTERVAL '1 second'
         WHERE id = $2
+          AND status = 'travelling'
+          AND mission_type = 'attack'
         """,
         return_seconds,
         mission_id,
     )
+
+    if transition_result != "UPDATE 1":
+        raise RuntimeError(
+            f"Misión {mission_id}: transición a retorno inválida. "
+            f"Resultado SQL: {transition_result}. "
+            "La transacción debe revertirse."
+        )
 
     return report_id, outcome
 
