@@ -390,13 +390,16 @@ async def get_spy_dashboard(user_id):
         missions = await connection.fetch(
             """
             SELECT
-                mission_type,
-                spies_sent,
-                arrival_at
-            FROM espionage_missions
-            WHERE attacker_realm_id = $1
-              AND status = 'travelling'
-            ORDER BY arrival_at, id
+                em.mission_type,
+                em.spies_sent,
+                em.arrival_at,
+                target.name AS target_name
+            FROM espionage_missions em
+            JOIN realms target
+              ON target.id = em.target_realm_id
+            WHERE em.attacker_realm_id = $1
+              AND em.status = 'travelling'
+            ORDER BY em.arrival_at, em.id
             LIMIT 10
             """,
             realm["id"],
@@ -405,14 +408,17 @@ async def get_spy_dashboard(user_id):
         reports = await connection.fetch(
             """
             SELECT
-                id,
-                mission_type,
-                success,
-                spies_lost,
-                created_at
-            FROM espionage_reports
-            WHERE attacker_realm_id = $1
-            ORDER BY created_at DESC, id DESC
+                er.id,
+                er.mission_type,
+                er.success,
+                er.spies_lost,
+                er.created_at,
+                target.name AS target_name
+            FROM espionage_reports er
+            JOIN realms target
+              ON target.id = er.target_realm_id
+            WHERE er.attacker_realm_id = $1
+            ORDER BY er.created_at DESC, er.id DESC
             LIMIT 10
             """,
             realm["id"],

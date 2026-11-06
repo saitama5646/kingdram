@@ -110,8 +110,9 @@ async def render_espionage(context):
     if data["missions"]:
         for mission in data["missions"]:
             lines.append(
-                f"• {MISSION_TYPES.get(mission['mission_type'], mission['mission_type'])}"
-                f" — {mission['spies_sent']} espías"
+                f"• <b>{escape(mission['target_name'])}</b>\n"
+                f"  {MISSION_TYPES.get(mission['mission_type'], mission['mission_type'])}\n"
+                f"  Espías enviados: {mission['spies_sent']}"
             )
     else:
         lines.append("No hay misiones en curso.")
@@ -320,7 +321,8 @@ async def reports_handler(callback: CallbackQuery):
             )
 
             lines.append(
-                f"• <b>{mission_name}</b>\n"
+                f"• <b>{escape(report['target_name'])}</b>\n"
+                f"  Misión: {mission_name}\n"
                 f"  Resultado: {result}\n"
                 f"  Espías perdidos: {report['spies_lost']}\n"
             )
