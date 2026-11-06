@@ -244,6 +244,10 @@ def aggregate_combat_units(units):
     ]
 
 def resolve_volley(shooters, targets, morale):
+    """
+    Resuelve una salva conservando las unidades destruidas
+    para los informes y compactando los supervivientes equivalentes.
+    """
     if not shooters or not targets:
         return 0.0, targets
 
@@ -252,6 +256,7 @@ def resolve_volley(shooters, targets, morale):
         target.setdefault("round_hull_damage", 0.0)
         target.setdefault("hull_damage", 0.0)
         target.setdefault("quantity", 1)
+        target.setdefault("destroyed", False)
 
         target["_shield_remaining"] = max(
             0.0,
@@ -259,8 +264,9 @@ def resolve_volley(shooters, targets, morale):
         )
 
     total_damage = 0.0
-    morale = max(0.0, float(morale))
-    morale_multiplier = morale_damage_multiplier(morale)
+    morale_multiplier = morale_damage_multiplier(
+        max(0.0, float(morale))
+    )
 
     for shooter in shooters:
         if shooter.get("destroyed", False):
@@ -280,7 +286,6 @@ def resolve_volley(shooters, targets, morale):
         if base_attack <= 0:
             continue
 
-        # Cada unidad del grupo realiza su propio disparo.
         for _ in range(shooter_quantity):
             living_quantity = sum(
                 max(0, int(target.get("quantity", 1)))
@@ -294,13 +299,13 @@ def resolve_volley(shooters, targets, morale):
             selection = random.randrange(living_quantity)
             target_index = None
 
-            for index, target in enumerate(targets):
-                if target.get("destroyed", False):
+            for index, candidate in enumerate(targets):
+                if candidate.get("destroyed", False):
                     continue
 
                 quantity = max(
                     0,
-                    int(target.get("quantity", 1)),
+                    int(candidate.get("quantity", 1)),
                 )
 
                 if selection < quantity:
@@ -314,7 +319,7 @@ def resolve_volley(shooters, targets, morale):
 
             target = targets[target_index]
 
-            # Separar una unidad del grupo para recibir este ataque.
+            # Una unidad del grupo recibe el impacto individualmente.
             if int(target.get("quantity", 1)) > 1:
                 target["quantity"] -= 1
 
@@ -324,7 +329,6 @@ def resolve_volley(shooters, targets, morale):
                 individual["round_hull_damage"] = 0.0
 
                 targets.append(individual)
-                target_index = len(targets) - 1
                 target = individual
 
             attack = base_attack * random.uniform(
@@ -345,7 +349,10 @@ def resolve_volley(shooters, targets, morale):
 
             target["round_shield_damage"] += absorbed
 
-            penetrating_damage = max(0.0, attack - absorbed)
+            penetrating_damage = max(
+                0.0,
+                attack - absorbed,
+            )
 
             maximum_hull = max(
                 1.0,
@@ -379,11 +386,11 @@ def resolve_volley(shooters, targets, morale):
                 target["destroyed"] = True
                 continue
 
-            remaining_hull_after_hit = max(
-                0.0,
-                maximum_hull - target["hull_damage"],
+            remaining_hull_after_hit = (
+                maximum_hull - target["hull_damage"]
             )
 
+            # La explosión solo se evalúa por debajo del 30%.
             if remaining_hull_after_hit < maximum_hull * 0.30:
                 destruction_chance = max(
                     0.0,
@@ -397,12 +404,19 @@ def resolve_volley(shooters, targets, morale):
                 if random.random() < destruction_chance:
                     target["destroyed"] = True
 
-    # Conservar las unidades destruidas para el registro del combate.
-    # Compactar únicamente supervivientes con estado idéntico.
+    # Nunca eliminar del registro las unidades destruidas.
     destroyed_units = []
     compacted = {}
 
     for target in targets:
+        quantity = max(
+            0,
+            int(target.get("quantity", 1)),
+        )
+
+        if quantity <= 0:
+            continue
+
         if target.get("destroyed", False):
             destroyed_units.append(dict(target))
             continue
@@ -421,14 +435,14 @@ def resolve_volley(shooters, targets, morale):
         if key not in compacted:
             compacted[key] = dict(target)
         else:
-            compacted[key]["quantity"] += max(
-                1,
-                int(target.get("quantity", 1)),
-            )
+            compacted[key]["quantity"] += quantity
 
+    # Muertos primero: se conserva el orden histórico esperado
+    # por los informes y pruebas; supervivientes después.
     targets[:] = destroyed_units + list(compacted.values())
 
     return total_damage, targets
+
 
 def resolve_battle_round_detailed(
     attackers,
