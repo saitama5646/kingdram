@@ -614,5 +614,166 @@ class CombatTests(unittest.TestCase):
         self.assertTrue(targets[0]["destroyed"])
 
 
+    def test_large_army_is_stored_as_combat_groups(self):
+        units = expand_combat_units([
+            {"unit_type": "spearman", "quantity": 2500},
+        ])
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0]["quantity"], 2500)
+
+        survivors = aggregate_combat_units(units)
+
+        self.assertEqual(
+            survivors,
+            [{"unit_type": "spearman", "quantity": 2500}],
+        )
+
+    def test_grouped_army_loses_only_the_targeted_unit(self):
+        shooters = [
+            {
+                "unit_type": "archer",
+                "attack": 101,
+                "destroyed": False,
+                "quantity": 1,
+            },
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "attack": 8,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "destroyed": False,
+                "quantity": 2000,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ):
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                with patch(
+                    "bot.workers.missions.random.random",
+                    return_value=1.0,
+                ):
+                    resolve_volley(shooters, targets, 1.0)
+
+        remaining = sum(
+            int(unit.get("quantity", 1))
+            for unit in targets
+            if not unit.get("destroyed", False)
+        )
+
+        self.assertEqual(remaining, 1999)
+
+    def test_grouped_target_preserves_total_quantity_after_hit(self):
+        shooters = [
+            {"attack": 10, "quantity": 1, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "attack": 8,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "round_shield_damage": 0,
+                "round_hull_damage": 0,
+                "quantity": 2000,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            return_value=0,
+        ):
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                resolve_volley(shooters, targets, 1.0)
+
+        total_quantity = sum(
+            int(target.get("quantity", 1))
+            for target in targets
+        )
+
+        self.assertEqual(total_quantity, 2000)
+
+        damaged_quantity = sum(
+            int(target.get("quantity", 1))
+            for target in targets
+            if float(target.get("hull_damage", 0)) > 0
+        )
+
+        self.assertEqual(damaged_quantity, 1)
+
+    def test_destroyed_target_is_preserved_and_skipped(self):
+        shooters = [
+            {"attack": 100, "quantity": 2, "destroyed": False},
+        ]
+
+        targets = [
+            {
+                "unit_type": "spearman",
+                "shield": 0,
+                "hull": 50,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+            {
+                "unit_type": "archer",
+                "shield": 0,
+                "hull": 200,
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with patch(
+            "bot.workers.missions.random.randrange",
+            side_effect=[0, 0],
+        ) as target_roll:
+            with patch(
+                "bot.workers.missions.random.uniform",
+                return_value=1.0,
+            ):
+                with patch(
+                    "bot.workers.missions.random.random",
+                    return_value=1.0,
+                ):
+                    resolve_volley(shooters, targets, 1.0)
+
+        self.assertEqual(target_roll.call_args_list[0].args, (2,))
+        self.assertEqual(target_roll.call_args_list[1].args, (1,))
+
+        destroyed = [
+            target for target in targets
+            if target.get("destroyed", False)
+        ]
+
+        survivors = [
+            target for target in targets
+            if not target.get("destroyed", False)
+        ]
+
+        self.assertEqual(len(destroyed), 1)
+        self.assertEqual(destroyed[0]["unit_type"], "spearman")
+        self.assertEqual(destroyed[0]["hull_damage"], 50)
+
+        self.assertEqual(len(survivors), 1)
+        self.assertEqual(survivors[0]["unit_type"], "archer")
+        self.assertEqual(survivors[0]["hull_damage"], 100)
+
+
 if __name__ == "__main__":
     unittest.main()
