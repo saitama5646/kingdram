@@ -370,23 +370,6 @@ async def get_spy_dashboard(user_id):
             realm["id"],
         )
 
-        targets = await connection.fetch(
-            """
-            SELECT
-                id,
-                name,
-                power,
-                continent,
-                region,
-                position
-            FROM realms
-            WHERE owner_id <> $1
-            ORDER BY power DESC, id
-            LIMIT 30
-            """,
-            user_id,
-        )
-
         missions = await connection.fetch(
             """
             SELECT
@@ -427,7 +410,6 @@ async def get_spy_dashboard(user_id):
     return {
         "realm": realm,
         "spies": spies,
-        "targets": targets,
         "missions": missions,
         "reports": reports,
     }

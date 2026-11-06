@@ -36,15 +36,6 @@ def espionage_keyboard(data):
         callback_data="espionage:recruit:10",
     )
 
-    for target in data["targets"]:
-        builder.button(
-            text=(
-                f"🎯 {target['name']} "
-                f"· Poder {target['power']}"
-            )[:60],
-            callback_data=f"espionage:target:{target['id']}",
-        )
-
     builder.button(
         text="📜 Informes",
         callback_data="espionage:reports",
@@ -119,8 +110,8 @@ async def render_espionage(context):
 
     lines.extend([
         "",
-        "<b>REINOS OBJETIVO</b>",
-        "Selecciona un reino para iniciar una misión.",
+        "Selecciona un reino desde el mapa de navegación "
+        "para iniciar una misión de espionaje.",
     ])
 
     await context.message.edit_text(
