@@ -10,6 +10,7 @@ from bot.database.connection import get_pool
 from bot.services.espionage import (
     MISSION_TYPES,
     get_spy_dashboard,
+    get_spy_report,
     recruit_spies,
     launch_spy_mission,
 )
@@ -357,10 +358,26 @@ async def mission_quantity_handler(
 
 
 
-@router.callback_query(F.data == "espionage:reports")
+@router.callback_query(
+    F.data.startswith("espionage:reports")
+)
 async def reports_handler(callback: CallbackQuery):
+    try:
+        parts = callback.data.split(":")
+        offset = int(parts[2]) if len(parts) > 2 else 0
+
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Página inválida.",
+            show_alert=True,
+        )
+        return
+
+    offset = max(0, offset)
+
     data = await get_spy_dashboard(
         callback.from_user.id,
+        report_offset=offset,
     )
 
     if not data:
@@ -370,18 +387,22 @@ async def reports_handler(callback: CallbackQuery):
         )
         return
 
+    reports = data["reports"]
+
     lines = [
-        "📜 <b>INFORMES DE ESPIONAJE</b>",
+        "📜 <b>HISTORIAL DE ESPIONAJE</b>",
+        "",
+        f"Página: <b>{offset // 10 + 1}</b>",
         "",
     ]
 
     builder = InlineKeyboardBuilder()
 
-    if not data["reports"]:
-        lines.append("Todavía no tienes informes.")
+    if not reports:
+        lines.append("No hay informes en esta página.")
 
     else:
-        for report in data["reports"]:
+        for report in reports:
             mission_name = MISSION_TYPES.get(
                 report["mission_type"],
                 report["mission_type"],
@@ -394,11 +415,11 @@ async def reports_handler(callback: CallbackQuery):
             )
 
             spies_sent = int(
-                report.get("spies_sent", 0) or 0
+                report["spies_sent"] or 0
             )
 
             spies_lost = int(
-                report.get("spies_lost", 0) or 0
+                report["spies_lost"] or 0
             )
 
             spies_returned = max(
@@ -416,14 +437,27 @@ async def reports_handler(callback: CallbackQuery):
             )
 
             builder.button(
-                text=(
-                    f"📄 Informe #{report['id']} — "
-                    f"{report['target_name']}"
-                ),
+                text=f"📄 Informe #{report['id']}",
                 callback_data=(
                     f"espionage:report:{report['id']}"
                 ),
             )
+
+    if offset > 0:
+        builder.button(
+            text="⬅ Página anterior",
+            callback_data=(
+                f"espionage:reports:{max(0, offset - 10)}"
+            ),
+        )
+
+    if len(reports) == 10:
+        builder.button(
+            text="➡ Página siguiente",
+            callback_data=(
+                f"espionage:reports:{offset + 10}"
+            ),
+        )
 
     builder.button(
         text="↩ Espionaje",
@@ -464,24 +498,9 @@ async def report_detail_handler(
         )
         return
 
-    data = await get_spy_dashboard(
+    report = await get_spy_report(
         callback.from_user.id,
-    )
-
-    if not data:
-        await callback.answer(
-            "Primero debes fundar un reino.",
-            show_alert=True,
-        )
-        return
-
-    report = next(
-        (
-            item
-            for item in data["reports"]
-            if int(item["id"]) == report_id
-        ),
-        None,
+        report_id,
     )
 
     if not report:

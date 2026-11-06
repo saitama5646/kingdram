@@ -363,7 +363,7 @@ async def launch_spy_mission(user_id, target_realm_id, mission_type, spies_sent)
     )
 
 
-async def get_spy_dashboard(user_id):
+async def get_spy_dashboard(user_id, report_offset=0):
     pool = await get_pool()
 
     async with pool.acquire() as connection:
@@ -418,9 +418,10 @@ async def get_spy_dashboard(user_id):
               ON target.id = er.target_realm_id
             WHERE er.attacker_realm_id = $1
             ORDER BY er.created_at DESC, er.id DESC
-            LIMIT 10
+            LIMIT 10 OFFSET $2
             """,
             realm["id"],
+            max(0, int(report_offset)),
         )
 
     return {
@@ -429,3 +430,37 @@ async def get_spy_dashboard(user_id):
         "missions": missions,
         "reports": reports,
     }
+
+
+async def get_spy_report(user_id, report_id):
+    """
+    Recupera un informe individual verificando
+    que pertenezca al usuario solicitante.
+    """
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        report = await connection.fetchrow(
+            """
+            SELECT
+                er.id,
+                er.mission_type,
+                er.success,
+                er.spies_sent,
+                er.spies_lost,
+                er.created_at,
+                er.intelligence,
+                target.name AS target_name
+            FROM espionage_reports er
+            JOIN realms attacker
+              ON attacker.id = er.attacker_realm_id
+            JOIN realms target
+              ON target.id = er.target_realm_id
+            WHERE er.id = $1
+              AND attacker.owner_id = $2
+            """,
+            report_id,
+            user_id,
+        )
+
+    return report
