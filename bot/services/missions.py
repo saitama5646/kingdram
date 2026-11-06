@@ -241,6 +241,7 @@ async def create_mission(
                     quantity
                     * float(UNITS[unit_type]["food"])
                     * travel_seconds
+                    * 2
                     / 86400
                     * TRAVEL_FOOD_MULTIPLIER
                     for unit_type, quantity in selected.items()
@@ -407,21 +408,62 @@ async def recall_mission(user_id, mission_id):
                     "que todavía están viajando."
                 )
 
-            elapsed = await connection.fetchval(
+            elapsed = float(elapsed or 0)
+
+            troop_rows = await connection.fetch(
                 """
-                SELECT EXTRACT(
-                    EPOCH FROM NOW() - departure_at
-                )
-                FROM military_missions
-                WHERE id = $1
+                SELECT unit_type, quantity
+                FROM military_mission_units
+                WHERE mission_id = $1
+                  AND surviving_quantity > 0
                 """,
                 mission_id,
             )
 
-            return_seconds = max(
-                30,
-                int(elapsed or 30),
-            )
+            return_troops = [
+                {
+                    "unit_type": row["unit_type"],
+                    "quantity": int(row["surviving_quantity"]),
+                }
+                for row in await connection.fetch(
+                    """
+                    SELECT unit_type, surviving_quantity
+                    FROM military_mission_units
+                    WHERE mission_id = $1
+                      AND surviving_quantity > 0
+                    """,
+                    mission_id,
+                )
+            ]
+
+            speed = calculate_mission_speed(return_troops)
+
+            if speed <= 0:
+                return_seconds = 60
+            else:
+                total_trip_seconds = calculate_travel_time(
+                    float(mission["distance"]),
+                    speed,
+                )
+
+                # Estimar el tramo que aún falta recorrer.
+                progress = min(
+                    1.0,
+                    max(
+                        0.0,
+                        elapsed / max(1, total_trip_seconds),
+                    ),
+                )
+
+                remaining_distance = (
+                    float(mission["distance"])
+                    * (1.0 - progress)
+                )
+
+                return_seconds = calculate_travel_time(
+                    remaining_distance,
+                    speed,
+                )
 
             await connection.execute(
                 """

@@ -10,6 +10,7 @@ from bot.services.missions import finish_returning_mission
 from bot.services.military import UNITS
 from bot.services.research import get_research_effects
 from bot.services.construction import BUILDINGS
+from bot.services.world import calculate_travel_time, calculate_mission_speed
 
 
 MAX_BATTLE_ROUNDS = 6
@@ -1226,10 +1227,26 @@ async def process_arrival(connection, mission):
         outcome,
     )
 
-    return_seconds = max(
-        30,
-        int(float(mission["distance"]) * 10),
-    )
+    # El retorno usa la velocidad de las unidades supervivientes.
+    # Se mantiene la misma fórmula de viaje utilizada en la ida.
+    return_troops = [
+        {
+            "unit_type": troop["unit_type"],
+            "quantity": int(troop["quantity"]),
+        }
+        for troop in attackers
+        if int(troop["quantity"]) > 0
+    ]
+
+    return_speed = calculate_mission_speed(return_troops)
+
+    if return_speed <= 0:
+        return_seconds = 60
+    else:
+        return_seconds = calculate_travel_time(
+            float(mission["distance"]),
+            return_speed,
+        )
 
     await connection.execute(
         """

@@ -231,6 +231,58 @@ class CombatTests(unittest.TestCase):
         self.assertGreaterEqual(morale, 0.25)
         self.assertLessEqual(morale, 1.25)
 
+    def test_morale_falls_more_when_losses_are_heavy(self):
+        light_losses = update_morale(
+            1.0,
+            10,
+            100,
+            0,
+            100,
+        )
+
+        heavy_losses = update_morale(
+            1.0,
+            70,
+            100,
+            0,
+            100,
+        )
+
+        self.assertLess(heavy_losses, light_losses)
+
+    def test_morale_improves_when_enemy_losses_are_heavy(self):
+        morale = update_morale(
+            1.0,
+            0,
+            100,
+            50,
+            100,
+        )
+
+        self.assertGreater(morale, 1.0)
+
+    def test_morale_is_capped_at_maximum(self):
+        morale = update_morale(
+            1.25,
+            0,
+            100,
+            100,
+            100,
+        )
+
+        self.assertEqual(morale, 1.25)
+
+    def test_morale_is_capped_at_minimum(self):
+        morale = update_morale(
+            0.25,
+            100,
+            100,
+            0,
+            100,
+        )
+
+        self.assertEqual(morale, 0.25)
+
 
     def test_research_improves_attack_and_hull(self):
         units = expand_combat_units(
@@ -495,6 +547,27 @@ class CombatTests(unittest.TestCase):
 
         self.assertEqual(targets[0]["round_shield_damage"], 6)
         self.assertEqual(targets[0]["round_hull_damage"], 9)
+
+    def test_damage_multiplier_has_maximum_morale_penalty(self):
+        from bot.workers.missions import morale_damage_multiplier
+
+        self.assertAlmostEqual(
+            morale_damage_multiplier(0.20),
+            0.90,
+        )
+
+        self.assertAlmostEqual(
+            morale_damage_multiplier(0.10),
+            0.90,
+        )
+
+    def test_damage_multiplier_preserves_positive_morale_bonus(self):
+        from bot.workers.missions import morale_damage_multiplier
+
+        self.assertAlmostEqual(
+            morale_damage_multiplier(1.10),
+            1.10,
+        )
 
     def test_zero_attack_does_not_damage_targets(self):
         shooters = [
