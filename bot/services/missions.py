@@ -17,6 +17,9 @@ UNIT_ORDER = (
     "royal_guard",
 )
 
+# Multiplicador de alimentos exclusivo de las tropas en viaje.
+TRAVEL_FOOD_MULTIPLIER = 12
+
 
 def validate_troops(troops):
     selected = {}
@@ -231,13 +234,15 @@ async def create_mission(
                 speed,
             )
 
-            # Consumo diario de campaña proporcional al tiempo de viaje.
+            # Consumo de alimentos exclusivo de las expediciones.
+            # El mantenimiento de tropas estacionadas no se modifica.
             food_cost = ceil(
                 sum(
                     quantity
                     * float(UNITS[unit_type]["food"])
                     * travel_seconds
                     / 86400
+                    * TRAVEL_FOOD_MULTIPLIER
                     for unit_type, quantity in selected.items()
                     if quantity > 0
                 )
