@@ -2041,29 +2041,44 @@ async def missions_worker(bot):
                 )
 
                 for item in arriving:
-                    async with connection.transaction():
-                        mission = await connection.fetchrow(
-                            """
-                            SELECT *
-                            FROM military_missions
-                            WHERE id = $1
-                              AND status = 'travelling'
-                              AND mission_type = 'attack'
-                            FOR UPDATE
-                            """,
-                            item["id"],
-                        )
+                    mission_id = item["id"]
+                    mission = None
+                    report_id = None
 
-                        if mission:
-                            report_id, outcome = await process_arrival(
-                                connection,
-                                mission,
+                    try:
+                        async with connection.transaction():
+                            mission = await connection.fetchrow(
+                                """
+                                SELECT *
+                                FROM military_missions
+                                WHERE id = $1
+                                  AND status = 'travelling'
+                                  AND mission_type = 'attack'
+                                FOR UPDATE
+                                """,
+                                mission_id,
                             )
 
-                    if mission:
-                        await send_battle_notifications(
-                            bot,
-                            report_id,
+                            if mission:
+                                report_id, outcome = await process_arrival(
+                                    connection,
+                                    mission,
+                                )
+
+                        if mission and report_id is not None:
+                            await send_battle_notifications(
+                                bot,
+                                report_id,
+                            )
+
+                    except asyncio.CancelledError:
+                        raise
+
+                    except Exception:
+                        logging.exception(
+                            "Error procesando la misión militar %s. "
+                            "Se continuará con las demás misiones.",
+                            mission_id,
                         )
 
                 returning = await connection.fetch(
@@ -2077,11 +2092,24 @@ async def missions_worker(bot):
                     """
                 )
 
-                for mission in returning:
-                    async with connection.transaction():
-                        await finish_returning_mission(
-                            connection,
-                            mission["id"],
+                for item in returning:
+                    mission_id = item["id"]
+
+                    try:
+                        async with connection.transaction():
+                            await finish_returning_mission(
+                                connection,
+                                mission_id,
+                            )
+
+                    except asyncio.CancelledError:
+                        raise
+
+                    except Exception:
+                        logging.exception(
+                            "Error finalizando el retorno de la misión "
+                            "%s. Se continuará con los demás retornos.",
+                            mission_id,
                         )
 
         except asyncio.CancelledError:
@@ -2089,7 +2117,7 @@ async def missions_worker(bot):
 
         except Exception:
             logging.exception(
-                "Error en el trabajador de misiones."
+                "Error general en el trabajador de misiones."
             )
 
         await asyncio.sleep(5)
