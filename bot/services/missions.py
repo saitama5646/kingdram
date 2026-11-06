@@ -381,7 +381,10 @@ async def recall_mission(user_id, mission_id):
                 """
                 SELECT
                     m.*,
-                    r.owner_id
+                    r.owner_id,
+                    EXTRACT(
+                        EPOCH FROM (NOW() - m.departure_at)
+                    ) AS elapsed_seconds
                 FROM military_missions m
                 JOIN realms r
                   ON r.id = m.attacker_realm_id
@@ -408,16 +411,9 @@ async def recall_mission(user_id, mission_id):
                     "que todavía están viajando."
                 )
 
-            elapsed = float(elapsed or 0)
-
-            troop_rows = await connection.fetch(
-                """
-                SELECT unit_type, quantity
-                FROM military_mission_units
-                WHERE mission_id = $1
-                  AND surviving_quantity > 0
-                """,
-                mission_id,
+            elapsed = max(
+                0.0,
+                float(mission["elapsed_seconds"] or 0),
             )
 
             return_troops = [
