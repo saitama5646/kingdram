@@ -107,10 +107,7 @@ ALTER TABLE battle_reports
 CREATE INDEX IF NOT EXISTS idx_battle_mission
 ON battle_reports(mission_id);
 
--- Asignar posiciones a los reinos antiguos que no tengan.
-DO $$
-DECLARE
-    realm_record-- Normalizar y asignar coordenadas del mundo.
+-- Normalizar y asignar coordenadas del mundo.
 -- Distribución: 100 continentes, 3 territorios y 20 posiciones.
 DO $$
 DECLARE

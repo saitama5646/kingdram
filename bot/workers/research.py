@@ -114,7 +114,7 @@ async def finish_research(bot: Bot):
                 f"Tu reino <b>{item['realm_name']}</b> "
                 f"ha desarrollado <b>{item['research_name']}</b> "
                 f"hasta el nivel <b>{item['target_level']}</b>.\n\n"
-                (
+                + (
                     "Ya puedes acudir a Territorios y elegir "
                     "un territorio completamente vacío para fundar "
                     "tu única provincia."
