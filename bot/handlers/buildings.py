@@ -140,11 +140,20 @@ async def get_realm_building_data(user_id):
             realm["id"],
         )
 
-    return realm, buildings, queue
+        resources = await connection.fetchrow(
+            """
+            SELECT wood, stone, gold, food
+            FROM resources
+            WHERE realm_id = $1
+            """,
+            realm["id"],
+        )
+
+    return realm, resources, buildings, queue
 
 
 async def render_buildings(callback):
-    realm, buildings, queue = await get_realm_building_data(
+    realm, resources, buildings, queue = await get_realm_building_data(
         callback.from_user.id
     )
 
@@ -166,6 +175,23 @@ async def render_buildings(callback):
         "",
         f"🏰 Dominio: <b>{escape(realm['name'])}</b>",
         "",
+        "━━━━━━━━━━━━━━━━━━",
+        "📦 <b>RECURSOS DISPONIBLES</b>",
+        "",
+        *[
+            (
+                f"{icon} <b>{name}:</b> "
+                f"{(resources[resource] if resources else 0):,}"
+            )
+            for resource, icon, name in (
+                ("wood", "🪵", "Madera"),
+                ("stone", "🪨", "Piedra"),
+                ("gold", "🪙", "Oro"),
+                ("food", "🌾", "Alimentos"),
+            )
+        ],
+        "",
+        "━━━━━━━━━━━━━━━━━━",
         "Selecciona un edificio para consultar "
         "sus características y mejorarlo.",
     ]
