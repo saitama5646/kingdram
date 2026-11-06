@@ -5,6 +5,8 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.database.connection import get_pool
+
 from bot.services.espionage import (
     MISSION_TYPES,
     get_spy_dashboard,
@@ -155,6 +157,81 @@ async def recruit_handler(callback: CallbackQuery):
 
     if success:
         await render_espionage(callback)
+
+
+@router.callback_query(
+    F.data.startswith("espionage:from_map:")
+)
+async def espionage_from_map_handler(
+    callback: CallbackQuery,
+):
+    try:
+        target_id = int(callback.data.split(":")[-1])
+    except (ValueError, IndexError):
+        await callback.answer(
+            "Objetivo inválido.",
+            show_alert=True,
+        )
+        return
+
+    pool = await get_pool()
+
+    async with pool.acquire() as connection:
+        own_realm = await connection.fetchrow(
+            """
+            SELECT id
+            FROM realms
+            WHERE owner_id = $1
+            """,
+            callback.from_user.id,
+        )
+
+        if not own_realm:
+            await callback.answer(
+                "Primero debes fundar tu reino.",
+                show_alert=True,
+            )
+            return
+
+        target = await connection.fetchrow(
+            """
+            SELECT id, owner_id, name
+            FROM realms
+            WHERE id = $1
+            """,
+            target_id,
+        )
+
+    if not target:
+        await callback.answer(
+            "El reino objetivo ya no existe.",
+            show_alert=True,
+        )
+        return
+
+    if int(target["id"]) == int(own_realm["id"]):
+        await callback.answer(
+            "No puedes espiar tu propio reino.",
+            show_alert=True,
+        )
+        return
+
+    if int(target["owner_id"]) == int(callback.from_user.id):
+        await callback.answer(
+            "No puedes espiar tu propio reino.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        "🕵 <b>ESPIONAJE DEL REINO</b>\\n\\n"
+        f"🎯 Objetivo: <b>{escape(target['name'])}</b>\\n\\n"
+        "Selecciona la información que deseas obtener.",
+        reply_markup=target_keyboard(target_id),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(F.data.startswith("espionage:target:"))

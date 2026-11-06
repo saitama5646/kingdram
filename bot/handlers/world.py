@@ -200,6 +200,11 @@ def realm_detail_keyboard(
             callback_data=f"battle:target:{realm_id}",
         )
 
+        builder.button(
+            text="🕵 Espiar reino",
+            callback_data=f"espionage:from_map:{realm_id}",
+        )
+
     builder.button(
         text="◀ Volver al territorio",
         callback_data=(

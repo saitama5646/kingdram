@@ -25,6 +25,7 @@ from bot.handlers.world import router as world_router
 from bot.handlers.ranking import router as ranking_router
 from bot.handlers.research import router as research_router
 from bot.handlers.battle import router as battle_router
+from bot.handlers.espionage import router as espionage_router
 from bot.handlers.diplomacy import router as diplomacy_router
 from bot.handlers.treaties import router as treaties_router
 
@@ -123,6 +124,7 @@ async def main():
         dp.include_router(ranking_router)
         dp.include_router(research_router)
         dp.include_router(battle_router)
+        dp.include_router(espionage_router)
 
         workers.extend([
             asyncio.create_task(
