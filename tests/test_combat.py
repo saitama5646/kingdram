@@ -913,6 +913,100 @@ class CombatTests(unittest.TestCase):
                 "Atacante",
             )
 
+    def test_combat_state_rejects_non_finite_hull(self):
+        from bot.workers.missions import validate_combat_state
+
+        original = [
+            {"unit_type": "spearman", "quantity": 1},
+        ]
+
+        invalid_units = [
+            {
+                "unit_type": "spearman",
+                "quantity": 1,
+                "attack": 8,
+                "shield": 0,
+                "hull": float("nan"),
+                "hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_combat_state(
+                invalid_units,
+                original,
+                "Atacante",
+            )
+
+    def test_combat_state_rejects_infinite_hull_damage(self):
+        from bot.workers.missions import validate_combat_state
+
+        original = [
+            {"unit_type": "spearman", "quantity": 1},
+        ]
+
+        invalid_units = [
+            {
+                "unit_type": "spearman",
+                "quantity": 1,
+                "attack": 8,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": float("inf"),
+                "destroyed": False,
+            },
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_combat_state(
+                invalid_units,
+                original,
+                "Defensor",
+            )
+
+    def test_combat_state_rejects_non_finite_round_damage(self):
+        from bot.workers.missions import validate_combat_state
+
+        original = [
+            {"unit_type": "spearman", "quantity": 1},
+        ]
+
+        invalid_units = [
+            {
+                "unit_type": "spearman",
+                "quantity": 1,
+                "attack": 8,
+                "shield": 0,
+                "hull": 100,
+                "hull_damage": 0,
+                "round_shield_damage": float("nan"),
+                "round_hull_damage": 0,
+                "destroyed": False,
+            },
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_combat_state(
+                invalid_units,
+                original,
+                "Atacante",
+            )
+
+    def test_combat_state_rejects_unknown_original_unit(self):
+        from bot.workers.missions import validate_combat_state
+
+        original = [
+            {"unit_type": "unknown_unit", "quantity": 1},
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_combat_state(
+                [],
+                original,
+                "Atacante",
+            )
+
     def test_large_army_is_stored_as_combat_groups(self):
         units = expand_combat_units([
             {"unit_type": "spearman", "quantity": 2500},

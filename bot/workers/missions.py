@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 import random
-from math import ceil
+from math import ceil, isfinite
 
 from bot.database.connection import get_pool
 from bot.services.missions import finish_returning_mission
@@ -263,6 +263,13 @@ def validate_combat_state(units, original, side):
 
     for troop in original:
         unit_type = troop["unit_type"]
+
+        if unit_type not in UNITS:
+            raise RuntimeError(
+                f"{side}: unidad original desconocida: "
+                f"{unit_type}."
+            )
+
         quantity = int(troop.get("quantity", 0))
 
         if quantity < 0:
@@ -297,6 +304,17 @@ def validate_combat_state(units, original, side):
         hull = float(unit.get("hull", 100))
         hull_damage = float(unit.get("hull_damage", 0))
 
+        if not isfinite(hull):
+            raise RuntimeError(
+                f"{side}: casco no finito para {unit_type}."
+            )
+
+        if not isfinite(hull_damage):
+            raise RuntimeError(
+                f"{side}: daño de casco no finito "
+                f"para {unit_type}."
+            )
+
         if hull <= 0:
             raise RuntimeError(
                 f"{side}: casco inválido para {unit_type}."
@@ -313,6 +331,12 @@ def validate_combat_state(units, original, side):
             "round_hull_damage",
         ):
             damage = float(unit.get(damage_key, 0))
+
+            if not isfinite(damage):
+                raise RuntimeError(
+                    f"{side}: valor no finito en "
+                    f"{damage_key} para {unit_type}."
+                )
 
             if damage < 0:
                 raise RuntimeError(
