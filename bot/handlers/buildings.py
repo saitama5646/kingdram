@@ -115,11 +115,15 @@ async def get_realm_building_data(user_id):
         )
 
         if not realm:
-            return None, [], []
+            return None, None, [], []
 
         buildings = await connection.fetch(
             """
-            SELECT building_type, level
+            SELECT
+                building_type,
+                level,
+                damaged_levels,
+                rebuild_at
             FROM buildings
             WHERE realm_id = $1
             """,
@@ -195,6 +199,52 @@ async def render_buildings(callback):
         "Selecciona un edificio para consultar "
         "sus características y mejorarlo.",
     ]
+
+    damaged_buildings = [
+        item for item in buildings
+        if int(item.get("damaged_levels", 0) or 0) > 0
+    ]
+
+    if damaged_buildings:
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "🛠 <b>EDIFICIOS DAÑADOS</b>",
+            "",
+            "<i>Los niveles dañados no producen ni aportan "
+            "capacidad hasta que termine su reconstrucción.</i>",
+        ])
+
+        for item in damaged_buildings:
+            info = BUILDINGS.get(
+                item["building_type"],
+                {},
+            )
+
+            name = info.get(
+                "name",
+                item["building_type"],
+            )
+
+            icon = info.get("icon", "🏗")
+            original_level = int(item["level"])
+            damaged = int(item.get("damaged_levels", 0) or 0)
+            effective_level = max(0, original_level - damaged)
+            rebuild_at = item.get("rebuild_at")
+
+            remaining = (
+                format_remaining(rebuild_at)
+                if rebuild_at
+                else "Pendiente de programación"
+            )
+
+            lines.extend([
+                f"{icon} <b>{escape(name)}</b>",
+                f"   Nivel original: {original_level}",
+                f"   Nivel operativo: <b>{effective_level}</b>",
+                f"   Niveles dañados: <b>{damaged}</b>",
+                f"   Reconstrucción: <b>{remaining}</b>",
+            ])
 
     if queue:
         lines.extend([
@@ -284,7 +334,10 @@ async def building_detail_handler(callback: CallbackQuery):
 
         building = await connection.fetchrow(
             """
-            SELECT level
+            SELECT
+                level,
+                damaged_levels,
+                rebuild_at
             FROM buildings
             WHERE realm_id = $1
               AND building_type = $2
@@ -334,6 +387,15 @@ async def building_detail_handler(callback: CallbackQuery):
         )
 
     level = building["level"] if building else 0
+    damaged_levels = (
+        int(building["damaged_levels"] or 0)
+        if building else 0
+    )
+    rebuild_at = (
+        building["rebuild_at"]
+        if building else None
+    )
+    effective_level = max(0, level - damaged_levels)
 
     next_level = (
         max(item["target_level"] for item in queued) + 1
@@ -410,6 +472,7 @@ async def building_detail_handler(callback: CallbackQuery):
         escape(info["description"]),
         "",
         f"Nivel actual: <b>{level}</b>",
+        f"Nivel operativo: <b>{effective_level}</b>",
         f"Nivel objetivo: <b>{next_level}</b>",
         *(
             [
@@ -452,6 +515,28 @@ async def building_detail_handler(callback: CallbackQuery):
         ),
         f"⏱ Tiempo efectivo: <b>{format_duration(duration)}</b>",
     ]
+
+    if damaged_levels > 0:
+        remaining = (
+            format_remaining(rebuild_at)
+            if rebuild_at
+            else "Pendiente de programación"
+        )
+
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            "🛠 <b>ESTADO DE RECONSTRUCCIÓN</b>",
+            "",
+            f"⚠️ Niveles dañados: <b>{damaged_levels}</b>",
+            f"🏗 Niveles operativos: <b>{effective_level}</b>",
+            f"⏳ Tiempo restante: <b>{remaining}</b>",
+            "",
+            "<i>Los niveles dañados no aportan producción, "
+            "capacidad ni otros efectos mientras se reconstruyen. "
+            "Al finalizar el plazo, el edificio recuperará "
+            "automáticamente sus niveles.</i>",
+        ])
 
     if queued:
         lines.extend([
