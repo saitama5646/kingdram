@@ -397,11 +397,14 @@ def resolve_volley(shooters, targets, morale):
                 if random.random() < destruction_chance:
                     target["destroyed"] = True
 
-    # Compactar solo unidades con estado de combate idéntico.
+    # Conservar las unidades destruidas para el registro del combate.
+    # Compactar únicamente supervivientes con estado idéntico.
+    destroyed_units = []
     compacted = {}
 
     for target in targets:
         if target.get("destroyed", False):
+            destroyed_units.append(dict(target))
             continue
 
         key = (
@@ -423,7 +426,7 @@ def resolve_volley(shooters, targets, morale):
                 int(target.get("quantity", 1)),
             )
 
-    targets[:] = list(compacted.values())
+    targets[:] = destroyed_units + list(compacted.values())
 
     return total_damage, targets
 
@@ -1257,6 +1260,21 @@ async def process_arrival(connection, mission):
             # Daño real, ya modificado por moral.
             "attacker_damage": round(attacker_damage, 2),
             "defender_damage": round(defender_damage, 2),
+
+            "damage_breakdown": {
+                "attacker_shield_damage_received": round(
+                    damage_details["attacker_shield_damage"], 2
+                ),
+                "attacker_hull_damage_received": round(
+                    damage_details["attacker_hull_damage"], 2
+                ),
+                "defender_shield_damage_received": round(
+                    damage_details["defender_shield_damage"], 2
+                ),
+                "defender_hull_damage_received": round(
+                    damage_details["defender_hull_damage"], 2
+                ),
+            },
 
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
