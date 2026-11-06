@@ -14,6 +14,7 @@ from bot.services.world import calculate_travel_time, calculate_mission_speed
 
 
 MAX_BATTLE_ROUNDS = 6
+COMBAT_GROUP_THRESHOLD = 2000
 DAMAGE_VARIATION = 0.10
 
 MIN_MORALE = 0.25
@@ -176,6 +177,9 @@ def expand_combat_units(troops, research_effects=None):
         float(research_effects.get("military_shield", 0)),
     )
 
+    total_quantity = army_quantity(troops)
+    grouped = total_quantity >= COMBAT_GROUP_THRESHOLD
+
     units = []
 
     for troop in troops:
@@ -183,36 +187,38 @@ def expand_combat_units(troops, research_effects=None):
         quantity = max(0, int(troop["quantity"]))
         definition = UNITS.get(unit_type)
 
-        if not definition:
+        if not definition or quantity <= 0:
             continue
 
-        attack = max(
-            0.0,
-            float(definition.get("attack", 0)) * attack_multiplier,
-        )
+        unit = {
+            "unit_type": unit_type,
+            "attack": max(
+                0.0,
+                float(definition.get("attack", 0))
+                * attack_multiplier,
+            ),
+            "shield": max(
+                0.0,
+                float(definition.get("shield", 0))
+                * shield_multiplier,
+            ),
+            "hull": max(
+                1.0,
+                float(definition.get("hull", 100))
+                * defense_multiplier,
+            ),
+            "hull_damage": 0.0,
+            "destroyed": False,
+            "quantity": quantity if grouped else 1,
+        }
 
-        shield = max(
-            0.0,
-            float(definition.get("shield", 0)) * shield_multiplier,
-        )
-
-        hull = max(
-            1.0,
-            float(definition.get("hull", 100)) * defense_multiplier,
-        )
-
-        for _ in range(quantity):
-            units.append({
-                "unit_type": unit_type,
-                "attack": attack,
-                "shield": shield,
-                "hull": hull,
-                "hull_damage": 0.0,
-                "destroyed": False,
-            })
+        if grouped:
+            units.append(unit)
+        else:
+            for _ in range(quantity):
+                units.append(dict(unit))
 
     return units
-
 
 def aggregate_combat_units(units):
     quantities = {}
@@ -222,7 +228,11 @@ def aggregate_combat_units(units):
             continue
 
         unit_type = unit["unit_type"]
-        quantities[unit_type] = quantities.get(unit_type, 0) + 1
+        quantity = max(1, int(unit.get("quantity", 1)))
+
+        quantities[unit_type] = (
+            quantities.get(unit_type, 0) + quantity
+        )
 
     return [
         {
@@ -233,122 +243,187 @@ def aggregate_combat_units(units):
         if quantity > 0
     ]
 
-
 def resolve_volley(shooters, targets, morale):
-    """
-    Resuelve una descarga contra objetivos vivos.
-
-    Los escudos se regeneran al comenzar cada ronda.
-    El daño al blindaje permanece entre rondas.
-    Una unidad es destruida cuando su blindaje llega a cero.
-    """
-
     if not shooters or not targets:
         return 0.0, targets
-
-    shield_remaining = [
-        max(0.0, float(target.get("shield", 0)))
-        for target in targets
-    ]
 
     for target in targets:
         target.setdefault("round_shield_damage", 0.0)
         target.setdefault("round_hull_damage", 0.0)
         target.setdefault("hull_damage", 0.0)
+        target.setdefault("quantity", 1)
+
+        target["_shield_remaining"] = max(
+            0.0,
+            float(target.get("shield", 0)),
+        )
 
     total_damage = 0.0
     morale = max(0.0, float(morale))
+    morale_multiplier = morale_damage_multiplier(morale)
 
     for shooter in shooters:
         if shooter.get("destroyed", False):
             continue
 
-        living_indices = [
-            index
-            for index, target in enumerate(targets)
-            if not target.get("destroyed", False)
-        ]
-
-        if not living_indices:
-            break
-
-        morale_multiplier = morale_damage_multiplier(morale)
+        shooter_quantity = max(
+            1,
+            int(shooter.get("quantity", 1)),
+        )
 
         base_attack = max(
             0.0,
-            float(shooter.get("attack", 0)) * morale_multiplier,
+            float(shooter.get("attack", 0))
+            * morale_multiplier,
         )
 
         if base_attack <= 0:
             continue
 
-        attack = base_attack * random.uniform(
-            1.0 - DAMAGE_VARIATION,
-            1.0 + DAMAGE_VARIATION,
-        )
-
-        target_index = random.randrange(len(living_indices))
-        target_index = living_indices[target_index]
-        target = targets[target_index]
-
-        absorbed = min(
-            shield_remaining[target_index],
-            attack,
-        )
-
-        shield_remaining[target_index] -= absorbed
-        target["round_shield_damage"] += absorbed
-
-        penetrating_damage = max(0.0, attack - absorbed)
-
-        maximum_hull = max(
-            1.0,
-            float(target.get("hull", 100)),
-        )
-
-        current_hull_damage = max(
-            0.0,
-            float(target.get("hull_damage", 0)),
-        )
-
-        remaining_hull = max(
-            0.0,
-            maximum_hull - current_hull_damage,
-        )
-
-        actual_hull_damage = min(
-            remaining_hull,
-            penetrating_damage,
-        )
-
-        target["hull_damage"] = (
-            current_hull_damage + actual_hull_damage
-        )
-
-        target["round_hull_damage"] += actual_hull_damage
-
-        total_damage += absorbed + actual_hull_damage
-
-        if target["hull_damage"] >= maximum_hull:
-            target["destroyed"] = True
-            continue
-
-        remaining_hull_after_hit = max(
-            0.0,
-            maximum_hull - target["hull_damage"],
-        )
-
-        if remaining_hull_after_hit < maximum_hull * 0.30:
-            destruction_chance = max(
-                0.0,
-                min(
-                    1.0,
-                    1.0 - remaining_hull_after_hit / maximum_hull,
-                ),
+        # Cada unidad del grupo realiza su propio disparo.
+        for _ in range(shooter_quantity):
+            living_quantity = sum(
+                max(0, int(target.get("quantity", 1)))
+                for target in targets
+                if not target.get("destroyed", False)
             )
 
-            if random.random() < destruction_chance:
+            if living_quantity <= 0:
+                break
+
+            selection = random.randrange(living_quantity)
+            target_index = None
+
+            for index, target in enumerate(targets):
+                if target.get("destroyed", False):
+                    continue
+
+                quantity = max(
+                    0,
+                    int(target.get("quantity", 1)),
+                )
+
+                if selection < quantity:
+                    target_index = index
+                    break
+
+                selection -= quantity
+
+            if target_index is None:
+                break
+
+            target = targets[target_index]
+
+            # Separar una unidad del grupo para recibir este ataque.
+            if int(target.get("quantity", 1)) > 1:
+                target["quantity"] -= 1
+
+                individual = dict(target)
+                individual["quantity"] = 1
+                individual["round_shield_damage"] = 0.0
+                individual["round_hull_damage"] = 0.0
+
+                targets.append(individual)
+                target_index = len(targets) - 1
+                target = individual
+
+            attack = base_attack * random.uniform(
+                1.0 - DAMAGE_VARIATION,
+                1.0 + DAMAGE_VARIATION,
+            )
+
+            shield_remaining = max(
+                0.0,
+                float(target.get("_shield_remaining", 0)),
+            )
+
+            absorbed = min(shield_remaining, attack)
+
+            target["_shield_remaining"] = (
+                shield_remaining - absorbed
+            )
+
+            target["round_shield_damage"] += absorbed
+
+            penetrating_damage = max(0.0, attack - absorbed)
+
+            maximum_hull = max(
+                1.0,
+                float(target.get("hull", 100)),
+            )
+
+            current_hull_damage = max(
+                0.0,
+                float(target.get("hull_damage", 0)),
+            )
+
+            remaining_hull = max(
+                0.0,
+                maximum_hull - current_hull_damage,
+            )
+
+            actual_hull_damage = min(
+                remaining_hull,
+                penetrating_damage,
+            )
+
+            target["hull_damage"] = (
+                current_hull_damage + actual_hull_damage
+            )
+
+            target["round_hull_damage"] += actual_hull_damage
+
+            total_damage += absorbed + actual_hull_damage
+
+            if target["hull_damage"] >= maximum_hull:
                 target["destroyed"] = True
+                continue
+
+            remaining_hull_after_hit = max(
+                0.0,
+                maximum_hull - target["hull_damage"],
+            )
+
+            if remaining_hull_after_hit < maximum_hull * 0.30:
+                destruction_chance = max(
+                    0.0,
+                    min(
+                        1.0,
+                        1.0
+                        - remaining_hull_after_hit / maximum_hull,
+                    ),
+                )
+
+                if random.random() < destruction_chance:
+                    target["destroyed"] = True
+
+    # Compactar solo unidades con estado de combate idéntico.
+    compacted = {}
+
+    for target in targets:
+        if target.get("destroyed", False):
+            continue
+
+        key = (
+            target["unit_type"],
+            float(target.get("attack", 0)),
+            float(target.get("shield", 0)),
+            float(target.get("hull", 100)),
+            float(target.get("hull_damage", 0)),
+            float(target.get("_shield_remaining", 0)),
+            float(target.get("round_shield_damage", 0)),
+            float(target.get("round_hull_damage", 0)),
+        )
+
+        if key not in compacted:
+            compacted[key] = dict(target)
+        else:
+            compacted[key]["quantity"] += max(
+                1,
+                int(target.get("quantity", 1)),
+            )
+
+    targets[:] = list(compacted.values())
 
     return total_damage, targets
 
@@ -358,8 +433,6 @@ def resolve_battle_round_detailed(
     attacker_morale,
     defender_morale,
 ):
-    """Ambos bandos disparan con las unidades vivas al inicio."""
-
     for unit in attackers + defenders:
         unit["round_shield_damage"] = 0.0
         unit["round_hull_damage"] = 0.0
@@ -376,6 +449,18 @@ def resolve_battle_round_detailed(
         if not unit.get("destroyed", False)
     ]
 
+    attacker_before = sum(
+        int(unit.get("quantity", 1))
+        for unit in attackers
+        if not unit.get("destroyed", False)
+    )
+
+    defender_before = sum(
+        int(unit.get("quantity", 1))
+        for unit in defenders
+        if not unit.get("destroyed", False)
+    )
+
     attacker_damage, _ = resolve_volley(
         attacker_shooters,
         defenders,
@@ -391,18 +476,22 @@ def resolve_battle_round_detailed(
     details = {
         "attacker_shield_damage": sum(
             float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
             for unit in attackers
         ),
         "attacker_hull_damage": sum(
             float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
             for unit in attackers
         ),
         "defender_shield_damage": sum(
             float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
             for unit in defenders
         ),
         "defender_hull_damage": sum(
             float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
             for unit in defenders
         ),
     }
@@ -417,6 +506,16 @@ def resolve_battle_round_detailed(
         if not unit.get("destroyed", False)
     ]
 
+    attacker_remaining = sum(
+        int(unit.get("quantity", 1))
+        for unit in attackers_after
+    )
+
+    defender_remaining = sum(
+        int(unit.get("quantity", 1))
+        for unit in defenders_after
+    )
+
     return (
         attackers_after,
         defenders_after,
@@ -424,7 +523,6 @@ def resolve_battle_round_detailed(
         defender_damage,
         details,
     )
-
 
 def resolve_battle_round(
     attackers,
@@ -1097,8 +1195,14 @@ async def process_arrival(connection, mission):
     ):
         round_number += 1
 
-        attacker_before = len(attacker_combat_units)
-        defender_before = len(defender_combat_units)
+        attacker_before = sum(
+            int(unit.get("quantity", 1))
+            for unit in attacker_combat_units
+        )
+        defender_before = sum(
+            int(unit.get("quantity", 1))
+            for unit in defender_combat_units
+        )
 
         (
             attacker_combat_units,
@@ -1116,12 +1220,17 @@ async def process_arrival(connection, mission):
         attackers = aggregate_combat_units(attacker_combat_units)
         defenders = aggregate_combat_units(defender_combat_units)
 
-        attacker_losses = (
-            attacker_before - len(attacker_combat_units)
+        attacker_after = sum(
+            int(unit.get("quantity", 1))
+            for unit in attacker_combat_units
         )
-        defender_losses = (
-            defender_before - len(defender_combat_units)
+        defender_after = sum(
+            int(unit.get("quantity", 1))
+            for unit in defender_combat_units
         )
+
+        attacker_losses = attacker_before - attacker_after
+        defender_losses = defender_before - defender_after
 
         attacker_morale_before = attacker_morale
         defender_morale_before = defender_morale
@@ -1152,8 +1261,8 @@ async def process_arrival(connection, mission):
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
 
-            "attacker_remaining": len(attacker_combat_units),
-            "defender_remaining": len(defender_combat_units),
+            "attacker_remaining": sum(int(unit.get("quantity", 1)) for unit in attacker_combat_units),
+            "defender_remaining": sum(int(unit.get("quantity", 1)) for unit in defender_combat_units),
 
             "attacker_morale_start": round(attacker_morale_before, 3),
             "attacker_morale_change": round(
@@ -1174,8 +1283,8 @@ async def process_arrival(connection, mission):
             round_number,
             attacker_losses,
             defender_losses,
-            len(attacker_combat_units),
-            len(defender_combat_units),
+            sum(int(unit.get("quantity", 1)) for unit in attacker_combat_units),
+            sum(int(unit.get("quantity", 1)) for unit in defender_combat_units),
         )
 
     attackers = aggregate_combat_units(attacker_combat_units)
