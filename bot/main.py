@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -32,6 +33,50 @@ from bot.workers.military import military_worker
 from bot.workers.research import research_worker
 from bot.workers.missions import missions_worker
 from bot.workers.attack_warning import attack_warning_worker
+
+
+WORKER_RESTART_DELAY = 5
+
+
+async def supervise_worker(worker_factory, worker_name):
+    """
+    Mantiene un trabajador activo y lo reinicia si termina
+    inesperadamente o produce una excepción no controlada.
+    """
+    while True:
+        try:
+            logging.info(
+                "Iniciando trabajador: %s",
+                worker_name,
+            )
+
+            await worker_factory()
+
+            logging.warning(
+                "El trabajador %s terminó inesperadamente.",
+                worker_name,
+            )
+
+        except asyncio.CancelledError:
+            logging.info(
+                "Cancelación recibida por el trabajador: %s",
+                worker_name,
+            )
+            raise
+
+        except Exception:
+            logging.exception(
+                "Fallo crítico en el trabajador %s.",
+                worker_name,
+            )
+
+        logging.warning(
+            "Reiniciando trabajador %s en %s segundos.",
+            worker_name,
+            WORKER_RESTART_DELAY,
+        )
+
+        await asyncio.sleep(WORKER_RESTART_DELAY)
 
 
 async def main():
@@ -78,28 +123,46 @@ async def main():
 
         workers.extend([
             asyncio.create_task(
-                production_worker(),
-                name="kingdram-production",
+                supervise_worker(
+                    production_worker,
+                    "kingdram-production",
+                ),
+                name="kingdram-production-supervisor",
             ),
             asyncio.create_task(
-                construction_worker(bot),
-                name="kingdram-construction",
+                supervise_worker(
+                    lambda: construction_worker(bot),
+                    "kingdram-construction",
+                ),
+                name="kingdram-construction-supervisor",
             ),
             asyncio.create_task(
-                military_worker(bot),
-                name="kingdram-military",
+                supervise_worker(
+                    lambda: military_worker(bot),
+                    "kingdram-military",
+                ),
+                name="kingdram-military-supervisor",
             ),
             asyncio.create_task(
-                research_worker(bot),
-                name="kingdram-research",
+                supervise_worker(
+                    lambda: research_worker(bot),
+                    "kingdram-research",
+                ),
+                name="kingdram-research-supervisor",
             ),
             asyncio.create_task(
-                missions_worker(bot),
-                name="kingdram-missions",
+                supervise_worker(
+                    lambda: missions_worker(bot),
+                    "kingdram-missions",
+                ),
+                name="kingdram-missions-supervisor",
             ),
             asyncio.create_task(
-                attack_warning_worker(bot),
-                name="kingdram-attack-warning",
+                supervise_worker(
+                    lambda: attack_warning_worker(bot),
+                    "kingdram-attack-warning",
+                ),
+                name="kingdram-attack-warning-supervisor",
             ),
         ])
 
