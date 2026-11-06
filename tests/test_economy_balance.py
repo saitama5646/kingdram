@@ -10,6 +10,7 @@ from bot.services.research import (
 )
 from bot.services.economy import (
     get_realm_production,
+    get_daily_production,
 )
 from bot.workers.production import calculate_production
 from bot.handlers.bazaar import (
@@ -92,6 +93,23 @@ class EconomyBalanceTests(unittest.TestCase):
             get_realm_production(buildings, effects),
             calculate_production(buildings, effects),
         )
+
+
+    def test_daily_production_includes_research_bonus(self):
+        buildings = [
+            {"building_type": "sawmill", "level": 1},
+        ]
+
+        effects = {
+            "wood_production": 0.10,
+        }
+
+        daily = get_daily_production(
+            buildings,
+            effects,
+        )
+
+        self.assertEqual(daily["wood"], 19 * 1440)
 
 
 if __name__ == "__main__":

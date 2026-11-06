@@ -278,6 +278,31 @@ async def get_battle_targets(user_id):
                     AND vr.vassal_realm_id = r.id
                     AND vr.status = 'active'
               )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM alliance_members attacker_member
+                  JOIN alliance_members defender_member
+                    ON defender_member.player_id = r.owner_id
+                  JOIN alliance_treaties treaty
+                    ON treaty.status = 'active'
+                   AND treaty.treaty_type = 'non_aggression'
+                   AND (
+                       (
+                           treaty.alliance_id =
+                               attacker_member.alliance_id
+                           AND treaty.other_alliance_id =
+                               defender_member.alliance_id
+                       )
+                       OR
+                       (
+                           treaty.alliance_id =
+                               defender_member.alliance_id
+                           AND treaty.other_alliance_id =
+                               attacker_member.alliance_id
+                       )
+                   )
+                  WHERE attacker_member.player_id = $2
+              )
             ORDER BY r.power DESC, r.id
             LIMIT 20
             """,

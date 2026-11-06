@@ -60,12 +60,16 @@ def get_realm_production(buildings, research_effects=None):
     return production
 
 
-def get_daily_production(buildings):
+def get_daily_production(buildings, research_effects=None):
     """
-    Calcula la producción estimada de 24 horas.
+    Calcula la producción estimada de 24 horas,
+    incluyendo las bonificaciones de investigación.
     """
 
-    production_per_minute = get_realm_production(buildings)
+    production_per_minute = get_realm_production(
+        buildings,
+        research_effects,
+    )
 
     return {
         resource: amount * MINUTES_PER_DAY
@@ -127,7 +131,12 @@ def calculate_vassal_tribute(produced_resources):
     return tribute, retained
 
 
-def calculate_realm_income(buildings, elapsed_minutes, is_vassal=False):
+def calculate_realm_income(
+    buildings,
+    elapsed_minutes,
+    is_vassal=False,
+    research_effects=None,
+):
     """
     Calcula los ingresos de un reino durante un intervalo.
 
@@ -137,7 +146,8 @@ def calculate_realm_income(buildings, elapsed_minutes, is_vassal=False):
 
     produced = calculate_interval_production(
         buildings,
-        elapsed_minutes
+        elapsed_minutes,
+        research_effects,
     )
 
     if not is_vassal:
