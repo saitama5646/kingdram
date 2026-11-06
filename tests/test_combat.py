@@ -720,7 +720,7 @@ class CombatTests(unittest.TestCase):
         self.assertEqual(defender_damage, 30)
 
         self.assertEqual(
-            details["attacker_hull_damage_received"],
+            details["attacker_hull_damage"],
             30,
         )
 
