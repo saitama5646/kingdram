@@ -307,6 +307,7 @@ async def get_battle_targets(user_id):
             LIMIT 20
             """,
             attacker["id"],
+            user_id,
         )
 
         return {

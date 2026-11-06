@@ -245,37 +245,60 @@ async def battle_target(callback: CallbackQuery):
         await callback.answer("Objetivo no válido.", show_alert=True)
         return
 
-    data = await get_battle_targets(callback.from_user.id)
-
-    if not data:
-        await callback.answer("No tienes un reino.", show_alert=True)
-        return
-
-    target = next(
-        (item for item in data["targets"] if item["id"] == realm_id),
-        None,
-    )
-
-    if not target:
-        await callback.answer(
-            "Este objetivo ya no está disponible.",
-            show_alert=True,
-        )
-        return
-
+    # Evita que Telegram mantenga el botón cargando.
     await callback.answer()
 
-    await callback.message.edit_text(
-        "⚔ <b>PREPARAR CAMPAÑA</b>\n\n"
-        f"🏰 Objetivo: <b>{escape(target['name'])}</b>\n"
-        f"Nivel: {target['level']}\n"
-        f"Poder general: {number(target['power'])}\n\n"
-        "Elige exactamente cuántas unidades deseas enviar.\n"
-        "Las tropas enviadas dejarán de estar disponibles "
-        "en tu ejército mientras estén en misión.",
-        reply_markup=battle_confirm_keyboard(realm_id),
-        parse_mode="HTML",
-    )
+    try:
+        data = await get_battle_targets(callback.from_user.id)
+
+        if not data:
+            await callback.message.edit_text(
+                "🏰 Primero debes fundar tu reino.",
+                parse_mode="HTML",
+            )
+            return
+
+        target = next(
+            (
+                item for item in data["targets"]
+                if int(item["id"]) == realm_id
+            ),
+            None,
+        )
+
+        if not target:
+            await callback.message.edit_text(
+                "⚠️ Este objetivo ya no está disponible. "
+                "Vuelve al mapa y selecciona otro reino."
+            )
+            return
+
+        await callback.message.edit_text(
+            "⚔ <b>PREPARAR CAMPAÑA</b>\n\n"
+            f"🏰 Objetivo: <b>{escape(target['name'])}</b>\n"
+            f"Nivel: {target['level']}\n"
+            f"Poder general: {number(target['power'])}\n\n"
+            "Elige exactamente cuántas unidades deseas enviar.\n"
+            "Las tropas enviadas dejarán de estar disponibles "
+            "en tu ejército mientras estén en misión.",
+            reply_markup=battle_confirm_keyboard(realm_id),
+            parse_mode="HTML",
+        )
+
+    except Exception:
+        import logging
+
+        logging.exception(
+            "Error al preparar ataque contra el reino %s "
+            "para el jugador %s.",
+            realm_id,
+            callback.from_user.id,
+        )
+
+        await callback.message.answer(
+            "⚠️ No se pudo abrir la preparación del ataque. "
+            "El error quedó registrado en los logs."
+        )
 
 
 @router.callback_query(F.data.startswith("battle:prepare:"))
