@@ -108,15 +108,24 @@ async def get_realm_research_effects(connection, realm_id):
 async def finish_training(connection, realm_id):
     completed = await connection.fetch(
         """
-        SELECT id, unit_type, quantity
-        FROM training_queue
-        WHERE realm_id = $1
-          AND finishes_at <= NOW()
-        ORDER BY finishes_at, id
-        FOR UPDATE
+        SELECT
+            tq.id,
+            tq.realm_id,
+            tq.unit_type,
+            tq.quantity,
+            r.owner_id,
+            r.name AS realm_name
+        FROM training_queue tq
+        JOIN realms r ON r.id = tq.realm_id
+        WHERE tq.realm_id = $1
+          AND tq.finishes_at <= NOW()
+        ORDER BY tq.finishes_at, tq.id
+        FOR UPDATE OF tq
         """,
         realm_id,
     )
+
+    processed = []
 
     for item in completed:
         await connection.execute(
@@ -136,12 +145,19 @@ async def finish_training(connection, realm_id):
             item["quantity"],
         )
 
-        await connection.execute(
-            "DELETE FROM training_queue WHERE id = $1",
+        deleted_id = await connection.fetchval(
+            """
+            DELETE FROM training_queue
+            WHERE id = $1
+            RETURNING id
+            """,
             item["id"],
         )
 
+        if deleted_id is not None:
+            processed.append(item)
 
+    return processed
 async def get_military_data(user_id):
     pool = await get_pool()
 

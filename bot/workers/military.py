@@ -16,34 +16,23 @@ async def military_worker(bot: Bot):
             notifications = []
 
             async with pool.acquire() as connection:
-                due_entries = await connection.fetch(
+                due_realms = await connection.fetch(
                     """
-                    SELECT
-                        tq.realm_id,
-                        tq.unit_type,
-                        tq.quantity,
-                        r.owner_id,
-                        r.name AS realm_name
-                    FROM training_queue tq
-                    JOIN realms r ON r.id = tq.realm_id
-                    WHERE tq.finishes_at <= NOW()
-                    ORDER BY tq.finishes_at, tq.id
+                    SELECT DISTINCT realm_id
+                    FROM training_queue
+                    WHERE finishes_at <= NOW()
+                    ORDER BY realm_id
                     """
                 )
 
-                realm_ids = list({
-                    item["realm_id"]
-                    for item in due_entries
-                })
-
-                for realm_id in realm_ids:
+                for realm_entry in due_realms:
                     async with connection.transaction():
-                        await finish_training(
+                        completed = await finish_training(
                             connection,
-                            realm_id,
+                            realm_entry["realm_id"],
                         )
 
-                notifications = due_entries
+                        notifications.extend(completed)
 
             for item in notifications:
                 unit = UNITS.get(item["unit_type"])
@@ -54,11 +43,11 @@ async def military_worker(bot: Bot):
                 try:
                     await bot.send_message(
                         item["owner_id"],
-                        "⚔️ <b>¡Entrenamiento finalizado!</b>\n\n"
+                        "⚔️ <b>¡Entrenamiento finalizado!</b>\\n\\n"
                         f"En <b>{item['realm_name']}</b> "
                         f"se han incorporado "
                         f"<b>{item['quantity']}</b> "
-                        f"{unit['name']}.\n\n"
+                        f"{unit['name']}.\\n\\n"
                         "Las tropas ya están disponibles "
                         "en tu ejército."
                     )
