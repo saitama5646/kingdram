@@ -76,140 +76,160 @@ async def produce_resources():
     pool = await get_pool()
 
     async with pool.acquire() as connection:
-        async with connection.transaction():
-            # Restaurar edificios cuyo periodo de reparación terminó.
-            await connection.execute(
-                """
-                UPDATE buildings
-                SET damaged_levels = 0,
-                    rebuild_at = NULL
-                WHERE damaged_levels > 0
-                  AND rebuild_at IS NOT NULL
-                  AND rebuild_at <= NOW()
-                """
-            )
+        realm_ids = await connection.fetch(
+            """
+            SELECT realm_id
+            FROM resources
+            ORDER BY realm_id
+            """
+        )
 
-            realms = await connection.fetch(
-                """
-                SELECT realm_id, updated_at
-                FROM resources
-                ORDER BY realm_id
-                FOR UPDATE
-                """
-            )
+        for candidate in realm_ids:
+            realm_id = candidate["realm_id"]
 
-            for realm in realms:
-                realm_id = realm["realm_id"]
-
-                elapsed = await connection.fetchval(
-                    """
-                    SELECT GREATEST(
-                        0,
-                        FLOOR(
-                            EXTRACT(
-                                EPOCH FROM NOW() - updated_at
-                            ) / 60
-                        )
-                    )::BIGINT
-                    FROM resources
-                    WHERE realm_id = $1
-                    """,
-                    realm_id,
-                )
-
-                if not elapsed:
-                    continue
-
-                buildings = await connection.fetch(
-                    """
-                    SELECT
-                        building_type,
-                        GREATEST(level - damaged_levels, 0) AS level
-                    FROM buildings
-                    WHERE realm_id = $1
-                    """,
-                    realm_id,
-                )
-
-                capacity = get_storage_capacity(buildings)
-
-                research_levels = await get_realm_research(
-                    connection,
-                    realm_id,
-                )
-
-                research_effects = get_research_effects(
-                    research_levels
-                )
-
-                per_minute = calculate_production(
-                    buildings,
-                    research_effects,
-                )
-
-                produced = {
-                    resource: amount * elapsed
-                    for resource, amount in per_minute.items()
-                }
-
-                relation = await connection.fetchrow(
-                    """
-                    SELECT
-                        id,
-                        lord_realm_id,
-                        vassal_realm_id,
-                        tribute_rate
-                    FROM vassalage_relations
-                    WHERE vassal_realm_id = $1
-                      AND status = 'active'
-                    FOR UPDATE
-                    """,
-                    realm_id,
-                )
-
-                if relation:
-                    tribute, retained = split_tribute(
-                        produced,
-                        relation["tribute_rate"],
+            try:
+                async with connection.transaction():
+                    # La relación se bloquea para impedir que cambie
+                    # el vasallaje durante el cálculo del tributo.
+                    relation = await connection.fetchrow(
+                        """
+                        SELECT
+                            id,
+                            lord_realm_id,
+                            vassal_realm_id,
+                            tribute_rate
+                        FROM vassalage_relations
+                        WHERE vassal_realm_id = $1
+                          AND status = 'active'
+                        FOR UPDATE
+                        """,
+                        realm_id,
                     )
-                else:
-                    tribute = {
-                        resource: 0
+
+                    resource_realm_ids = [realm_id]
+
+                    if relation:
+                        resource_realm_ids.append(
+                            relation["lord_realm_id"]
+                        )
+
+                    resource_realm_ids = sorted(
+                        set(resource_realm_ids)
+                    )
+
+                    # Bloquear los recursos siempre por ID ascendente.
+                    # Evita ciclos de bloqueo entre señores y vasallos.
+                    locked_resources = await connection.fetch(
+                        """
+                        SELECT realm_id
+                        FROM resources
+                        WHERE realm_id = ANY($1::BIGINT[])
+                        ORDER BY realm_id
+                        FOR UPDATE
+                        """,
+                        resource_realm_ids,
+                    )
+
+                    locked_ids = {
+                        int(row["realm_id"])
+                        for row in locked_resources
+                    }
+
+                    if int(realm_id) not in locked_ids:
+                        continue
+
+                    resource_state = await connection.fetchrow(
+                        """
+                        SELECT updated_at
+                        FROM resources
+                        WHERE realm_id = $1
+                        """,
+                        realm_id,
+                    )
+
+                    if not resource_state:
+                        continue
+
+                    # Restaurar únicamente los edificios de este reino.
+                    await connection.execute(
+                        """
+                        UPDATE buildings
+                        SET damaged_levels = 0,
+                            rebuild_at = NULL
+                        WHERE realm_id = $1
+                          AND damaged_levels > 0
+                          AND rebuild_at IS NOT NULL
+                          AND rebuild_at <= NOW()
+                        """,
+                        realm_id,
+                    )
+
+                    elapsed = await connection.fetchval(
+                        """
+                        SELECT GREATEST(
+                            0,
+                            FLOOR(
+                                EXTRACT(
+                                    EPOCH FROM NOW() - $1
+                                ) / 60
+                            )
+                        )::BIGINT
+                        """,
+                        resource_state["updated_at"],
+                    )
+
+                    if not elapsed:
+                        continue
+
+                    buildings = await connection.fetch(
+                        """
+                        SELECT
+                            building_type,
+                            GREATEST(
+                                level - damaged_levels,
+                                0
+                            ) AS level
+                        FROM buildings
+                        WHERE realm_id = $1
+                        """,
+                        realm_id,
+                    )
+
+                    capacity = get_storage_capacity(buildings)
+
+                    research_levels = await get_realm_research(
+                        connection,
+                        realm_id,
+                    )
+
+                    research_effects = get_research_effects(
+                        research_levels
+                    )
+
+                    per_minute = calculate_production(
+                        buildings,
+                        research_effects,
+                    )
+
+                    produced = {
+                        resource: max(
+                            0,
+                            int(per_minute.get(resource, 0))
+                        ) * int(elapsed)
                         for resource in RESOURCES
                     }
 
-                    retained = produced
-
-                await connection.execute(
-                    """
-                    UPDATE resources
-                    SET wood = LEAST($1, wood + $2),
-                        stone = LEAST($3, stone + $4),
-                        gold = LEAST($5, gold + $6),
-                        food = LEAST($7, food + $8),
-                        updated_at = NOW()
-                    WHERE realm_id = $9
-                    """,
-                    capacity["wood"],
-                    retained["wood"],
-                    capacity["stone"],
-                    retained["stone"],
-                    capacity["gold"],
-                    retained["gold"],
-                    capacity["food"],
-                    retained["food"],
-                    realm_id,
-                )
-
-                if relation and any(tribute.values()):
-                    lord_id = relation["lord_realm_id"]
-
-                    lord_capacity = (
-                        await get_realm_storage_capacity(
-                            connection,
-                            lord_id,
+                    if relation:
+                        tribute, retained = split_tribute(
+                            produced,
+                            relation["tribute_rate"],
                         )
-                    )
+                    else:
+                        tribute = {
+                            resource: 0
+                            for resource in RESOURCES
+                        }
+                        retained = produced
 
                     await connection.execute(
                         """
@@ -217,42 +237,88 @@ async def produce_resources():
                         SET wood = LEAST($1, wood + $2),
                             stone = LEAST($3, stone + $4),
                             gold = LEAST($5, gold + $6),
-                            food = LEAST($7, food + $8)
+                            food = LEAST($7, food + $8),
+                            updated_at = NOW()
                         WHERE realm_id = $9
                         """,
-                        lord_capacity["wood"],
-                        tribute["wood"],
-                        lord_capacity["stone"],
-                        tribute["stone"],
-                        lord_capacity["gold"],
-                        tribute["gold"],
-                        lord_capacity["food"],
-                        tribute["food"],
-                        lord_id,
+                        capacity["wood"],
+                        retained["wood"],
+                        capacity["stone"],
+                        retained["stone"],
+                        capacity["gold"],
+                        retained["gold"],
+                        capacity["food"],
+                        retained["food"],
+                        realm_id,
                     )
 
-                    await connection.execute(
-                        """
-                        INSERT INTO vassalage_tribute_log (
-                            relation_id,
-                            lord_realm_id,
-                            vassal_realm_id,
-                            wood,
-                            stone,
-                            gold,
-                            food
+                    if relation and any(tribute.values()):
+                        lord_id = relation["lord_realm_id"]
+
+                        if int(lord_id) not in locked_ids:
+                            raise RuntimeError(
+                                "No se pudo bloquear el almacén del señor."
+                            )
+
+                        lord_capacity = (
+                            await get_realm_storage_capacity(
+                                connection,
+                                lord_id,
+                            )
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        """,
-                        relation["id"],
-                        relation["lord_realm_id"],
-                        relation["vassal_realm_id"],
-                        tribute["wood"],
-                        tribute["stone"],
-                        tribute["gold"],
-                        tribute["food"],
-                    )
 
+                        await connection.execute(
+                            """
+                            UPDATE resources
+                            SET wood = LEAST($1, wood + $2),
+                                stone = LEAST($3, stone + $4),
+                                gold = LEAST($5, gold + $6),
+                                food = LEAST($7, food + $8)
+                            WHERE realm_id = $9
+                            """,
+                            lord_capacity["wood"],
+                            tribute["wood"],
+                            lord_capacity["stone"],
+                            tribute["stone"],
+                            lord_capacity["gold"],
+                            tribute["gold"],
+                            lord_capacity["food"],
+                            tribute["food"],
+                            lord_id,
+                        )
+
+                        await connection.execute(
+                            """
+                            INSERT INTO vassalage_tribute_log (
+                                relation_id,
+                                lord_realm_id,
+                                vassal_realm_id,
+                                wood,
+                                stone,
+                                gold,
+                                food
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            """,
+                            relation["id"],
+                            relation["lord_realm_id"],
+                            relation["vassal_realm_id"],
+                            tribute["wood"],
+                            tribute["stone"],
+                            tribute["gold"],
+                            tribute["food"],
+                        )
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception:
+                logging.exception(
+                    "Error procesando la producción del reino %s. "
+                    "Se continuará con los demás reinos.",
+                    realm_id,
+                )
+                continue
 
 async def production_worker():
     print("Sistema de producción y almacenamiento iniciado.")
