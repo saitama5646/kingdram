@@ -312,6 +312,67 @@ class CombatTests(unittest.TestCase):
             ],
         )
 
+    def test_survivor_validation_returns_exact_losses(self):
+        from bot.workers.missions import (
+            validate_survivor_quantities,
+        )
+
+        original = [
+            {"unit_type": "spearman", "quantity": 10},
+            {"unit_type": "archer", "quantity": 5},
+        ]
+        survivors = [
+            {"unit_type": "spearman", "quantity": 7},
+            {"unit_type": "archer", "quantity": 2},
+        ]
+
+        self.assertEqual(
+            validate_survivor_quantities(
+                original,
+                survivors,
+                "Atacante",
+            ),
+            6,
+        )
+
+    def test_survivor_validation_rejects_extra_troops(self):
+        from bot.workers.missions import (
+            validate_survivor_quantities,
+        )
+
+        original = [
+            {"unit_type": "spearman", "quantity": 10},
+        ]
+        survivors = [
+            {"unit_type": "spearman", "quantity": 11},
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_survivor_quantities(
+                original,
+                survivors,
+                "Atacante",
+            )
+
+    def test_survivor_validation_rejects_unknown_unit_type(self):
+        from bot.workers.missions import (
+            validate_survivor_quantities,
+        )
+
+        original = [
+            {"unit_type": "spearman", "quantity": 10},
+        ]
+        survivors = [
+            {"unit_type": "archer", "quantity": 1},
+        ]
+
+        with self.assertRaises(RuntimeError):
+            validate_survivor_quantities(
+                original,
+                survivors,
+                "Defensor",
+            )
+
     def test_shield_absorbs_damage_before_hull(self):
         shooters = [
             {"attack": 15, "destroyed": False},

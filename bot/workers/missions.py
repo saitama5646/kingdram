@@ -1243,9 +1243,73 @@ async def save_report(
     return report_id, outcome
 
 
+def validate_survivor_quantities(original, survivors, side):
+    original_map = survivor_map(original)
+    survivor_quantities = survivor_map(survivors)
+
+    for unit_type, quantity in survivor_quantities.items():
+        if quantity < 0:
+            raise RuntimeError(
+                f"{side}: cantidad superviviente negativa "
+                f"para {unit_type}."
+            )
+
+        if unit_type not in original_map:
+            raise RuntimeError(
+                f"{side}: apareció una unidad no presente "
+                f"al inicio: {unit_type}."
+            )
+
+        if quantity > original_map[unit_type]:
+            raise RuntimeError(
+                f"{side}: supervivientes de {unit_type} "
+                f"({quantity}) exceden la cantidad inicial "
+                f"({original_map[unit_type]})."
+            )
+
+    for unit_type, initial_quantity in original_map.items():
+        remaining = survivor_quantities.get(unit_type, 0)
+
+        if remaining < 0 or remaining > initial_quantity:
+            raise RuntimeError(
+                f"{side}: resultado inconsistente para {unit_type}."
+            )
+
+    initial_total = army_quantity(original)
+    remaining_total = army_quantity(survivors)
+
+    if remaining_total > initial_total:
+        raise RuntimeError(
+            f"{side}: el total superviviente excede "
+            "el total inicial."
+        )
+
+    return initial_total - remaining_total
+
+
 async def process_arrival(connection, mission):
     mission_id = mission["id"]
+    attacker_realm_id = mission["attacker_realm_id"]
     defender_realm_id = mission["defender_realm_id"]
+
+    # Bloquear los reinos implicados en orden ascendente.
+    # Los combates simultáneos obtienen locks en el mismo orden.
+    locked_realms = await connection.fetch(
+        """
+        SELECT id
+        FROM realms
+        WHERE id = ANY($1::BIGINT[])
+        ORDER BY id
+        FOR UPDATE
+        """,
+        [attacker_realm_id, defender_realm_id],
+    )
+
+    if len(locked_realms) != 2:
+        raise RuntimeError(
+            f"Misión {mission_id}: no se pudieron bloquear "
+            "ambos reinos para resolver el combate."
+        )
 
     attacker_rows = await connection.fetch(
         """
@@ -1464,6 +1528,20 @@ async def process_arrival(connection, mission):
     attackers = aggregate_combat_units(attacker_combat_units)
     defenders = aggregate_combat_units(defender_combat_units)
 
+    # Validar invariantes antes de persistir las bajas.
+    # Si el resultado es inconsistente, la transacción revierte.
+    attacker_losses_total = validate_survivor_quantities(
+        attacker_original,
+        attackers,
+        "Atacante",
+    )
+
+    defender_losses_total = validate_survivor_quantities(
+        defender_original,
+        defenders,
+        "Defensor",
+    )
+
     await save_attacker_survivors(
         connection,
         mission_id,
@@ -1476,14 +1554,6 @@ async def process_arrival(connection, mission):
         defender_realm_id,
         defender_rows,
         defenders,
-    )
-
-    attacker_losses_total = (
-        attacker_initial - army_quantity(attackers)
-    )
-
-    defender_losses_total = (
-        defender_initial - army_quantity(defenders)
     )
 
     report_id, outcome = await save_report(
