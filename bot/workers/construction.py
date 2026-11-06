@@ -12,6 +12,9 @@ async def finish_constructions(bot: Bot):
     pool = await get_pool()
     notifications = []
 
+    # Las reparaciones se procesan de forma independiente
+    # para evitar afectar las construcciones pendientes.
+
     async with pool.acquire() as connection:
         async with connection.transaction():
             completed = await connection.fetch(
