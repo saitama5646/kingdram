@@ -41,7 +41,9 @@ def get_storage_capacity(buildings):
 async def get_realm_storage_capacity(connection, realm_id):
     buildings = await connection.fetch(
         """
-        SELECT building_type, level
+        SELECT
+            building_type,
+            GREATEST(level - damaged_levels, 0) AS level
         FROM buildings
         WHERE realm_id = $1
         """,

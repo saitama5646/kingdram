@@ -5,6 +5,36 @@ from bot.database.connection import get_pool
 MINIMUM_DESTRUCTION = 0.50
 
 
+async def would_create_vassalage_cycle(
+    connection,
+    lord_realm_id: int,
+    vassal_realm_id: int,
+):
+    return await connection.fetchval(
+        """
+        WITH RECURSIVE descendants(realm_id) AS (
+            SELECT $2::BIGINT
+
+            UNION
+
+            SELECT rel.vassal_realm_id
+            FROM vassalage_relations rel
+            JOIN descendants d
+              ON rel.lord_realm_id = d.realm_id
+            WHERE rel.status = 'active'
+        )
+        SELECT EXISTS (
+            SELECT 1
+            FROM descendants
+            WHERE realm_id = $1
+        )
+        """,
+        lord_realm_id,
+        vassal_realm_id,
+    )
+
+
+
 async def create_vassalage_request(
     lord_realm_id: int,
     vassal_realm_id: int,
@@ -36,6 +66,16 @@ async def create_vassalage_request(
 
             if len(realms) != 2:
                 return False, "Uno de los reinos no existe."
+
+            if await would_create_vassalage_cycle(
+                connection,
+                lord_realm_id,
+                vassal_realm_id,
+            ):
+                return False, (
+                    "Solicitud imposible: crearía un ciclo de vasallaje. "
+                    "Un reino no puede ser señor de su propio señor."
+                )
 
             relation = await connection.fetchrow(
                 """
@@ -114,6 +154,30 @@ async def decide_vassalage_request(
                 )
 
             if accept:
+                if await would_create_vassalage_cycle(
+                    connection,
+                    request["lord_realm_id"],
+                    request["vassal_realm_id"],
+                ):
+                    return False, (
+                        "Solicitud rechazada: produciría un ciclo "
+                        "de vasallaje."
+                    )
+
+                # Cancelar una petición inversa pendiente.
+                await connection.execute(
+                    """
+                    UPDATE vassalage_requests
+                    SET status = 'cancelled',
+                        decided_at = NOW()
+                    WHERE lord_realm_id = $1
+                      AND vassal_realm_id = $2
+                      AND status = 'pending'
+                    """,
+                    request["vassal_realm_id"],
+                    request["lord_realm_id"],
+                )
+
                 await connection.execute(
                     """
                     INSERT INTO vassalage_relations (

@@ -166,7 +166,10 @@ async def get_military_data(user_id):
 
             barracks = await connection.fetchval(
                 """
-                SELECT COALESCE(MAX(level), 0)
+                SELECT COALESCE(
+                    MAX(GREATEST(level - damaged_levels, 0)),
+                    0
+                )
                 FROM buildings
                 WHERE realm_id = $1
                   AND building_type = 'barracks'
@@ -231,7 +234,10 @@ async def start_training(user_id, unit_type, quantity):
 
             barracks = await connection.fetchval(
                 """
-                SELECT COALESCE(MAX(level), 0)
+                SELECT COALESCE(
+                    MAX(GREATEST(level - damaged_levels, 0)),
+                    0
+                )
                 FROM buildings
                 WHERE realm_id = $1
                   AND building_type = 'barracks'

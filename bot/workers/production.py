@@ -106,6 +106,18 @@ async def produce_resources():
 
     async with pool.acquire() as connection:
         async with connection.transaction():
+            # Restaurar edificios cuyo periodo de reparación terminó.
+            await connection.execute(
+                """
+                UPDATE buildings
+                SET damaged_levels = 0,
+                    rebuild_at = NULL
+                WHERE damaged_levels > 0
+                  AND rebuild_at IS NOT NULL
+                  AND rebuild_at <= NOW()
+                """
+            )
+
             realms = await connection.fetch(
                 """
                 SELECT realm_id, updated_at
@@ -139,7 +151,9 @@ async def produce_resources():
 
                 buildings = await connection.fetch(
                     """
-                    SELECT building_type, level
+                    SELECT
+                        building_type,
+                        GREATEST(level - damaged_levels, 0) AS level
                     FROM buildings
                     WHERE realm_id = $1
                     """,

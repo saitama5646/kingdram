@@ -30,6 +30,7 @@ async def connect_database():
         BASE_DIR / "bot" / "database" / "diplomacy.sql",
         BASE_DIR / "bot" / "database" / "treaties.sql",
         BASE_DIR / "bot" / "database" / "vassalage.sql",
+        BASE_DIR / "bot" / "database" / "combat_repairs.sql",
     ]
 
     try:

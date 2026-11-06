@@ -534,7 +534,7 @@ def infrastructure_value(buildings):
 async def damage_infrastructure(connection, realm_id, target_damage):
     buildings = await connection.fetch(
         """
-        SELECT id, building_type, level
+        SELECT id, building_type, level, damaged_levels
         FROM buildings
         WHERE realm_id = $1
         ORDER BY level DESC, id
@@ -543,7 +543,20 @@ async def damage_infrastructure(connection, realm_id, target_damage):
         realm_id,
     )
 
-    before = infrastructure_value(buildings)
+    # Solo cuentan los niveles que están operativos.
+    effective_buildings = [
+        {
+            "building_type": building["building_type"],
+            "level": max(
+                0,
+                int(building["level"])
+                - int(building["damaged_levels"]),
+            ),
+        }
+        for building in buildings
+    ]
+
+    before = infrastructure_value(effective_buildings)
     infrastructure_log = []
 
     if before <= 0 or target_damage <= 0:
@@ -558,7 +571,11 @@ async def damage_infrastructure(connection, realm_id, target_damage):
     hard_limit = int(before * MAX_INFRASTRUCTURE_DAMAGE)
 
     planned_levels = {
-        int(building["id"]): int(building["level"])
+        int(building["id"]): max(
+            0,
+            int(building["level"])
+            - int(building["damaged_levels"]),
+        )
         for building in buildings
     }
 
@@ -634,38 +651,40 @@ async def damage_infrastructure(connection, realm_id, target_damage):
 
     for building in buildings:
         building_id = int(building["id"])
-        old_level = int(building["level"])
-        new_level = planned_levels[building_id]
+        original_level = int(building["level"])
+        old_damaged = int(building["damaged_levels"])
 
-        if new_level == old_level:
+        old_effective = max(0, original_level - old_damaged)
+        new_effective = planned_levels[building_id]
+
+        damaged_now = old_effective - new_effective
+
+        if damaged_now <= 0:
             continue
 
-        if new_level <= 0:
-            await connection.execute(
-                "DELETE FROM buildings WHERE id = $1",
-                building_id,
-            )
-        else:
-            await connection.execute(
-                """
-                UPDATE buildings
-                SET level = $1
-                WHERE id = $2
-                """,
-                new_level,
-                building_id,
-            )
+        await connection.execute(
+            """
+            UPDATE buildings
+            SET damaged_levels = damaged_levels + $1,
+                rebuild_at = NOW() + INTERVAL '12 hours'
+            WHERE id = $2
+            """,
+            damaged_now,
+            building_id,
+        )
 
         infrastructure_log.append({
             "building_type": building["building_type"],
-            "old_level": old_level,
-            "new_level": new_level,
-            "destroyed_levels": old_level - new_level,
+            "old_level": old_effective,
+            "new_level": new_effective,
+            "destroyed_levels": damaged_now,
         })
 
     remaining_buildings = await connection.fetch(
         """
-        SELECT building_type, level
+        SELECT
+            building_type,
+            GREATEST(level - damaged_levels, 0) AS level
         FROM buildings
         WHERE realm_id = $1
         """,
