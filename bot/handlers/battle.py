@@ -902,20 +902,16 @@ async def battle_report_handler(callback: CallbackQuery):
                     f"{number(round(entry.get('defender_damage', 0)))}"
                 ),
                 (
-                    "   Escudos atacantes: "
-                    f"{number(round(entry.get('defender_shield_damage', 0)))}"
+                    "🧭 Moral atacante: "
+                    f"{float(entry.get('attacker_morale_start', entry.get('attacker_morale', 1))) * 100:.1f}% → "
+                    f"{float(entry.get('attacker_morale', 1)) * 100:.1f}% "
+                    f"({float(entry.get('attacker_morale_change', 0)) * 100:+.1f}%)"
                 ),
                 (
-                    "   Blindaje atacante: "
-                    f"{number(round(entry.get('defender_hull_damage', 0)))}"
-                ),
-                (
-                    "   Escudos defensores: "
-                    f"{number(round(entry.get('attacker_shield_damage', 0)))}"
-                ),
-                (
-                    "   Blindaje defensor: "
-                    f"{number(round(entry.get('attacker_hull_damage', 0)))}"
+                    "🧭 Moral defensor: "
+                    f"{float(entry.get('defender_morale_start', entry.get('defender_morale', 1))) * 100:.1f}% → "
+                    f"{float(entry.get('defender_morale', 1)) * 100:.1f}% "
+                    f"({float(entry.get('defender_morale_change', 0)) * 100:+.1f}%)"
                 ),
                 (
                     "💀 Bajas atacante: "

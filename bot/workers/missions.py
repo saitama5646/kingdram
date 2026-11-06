@@ -106,13 +106,34 @@ def update_morale(
 
 
 
+def morale_damage_multiplier(morale):
+    """
+    La moral modifica el daño de forma moderada.
+
+    Moral <= 20%: penalización máxima del 10%.
+    Moral 20%-100%: penalización lineal.
+    Moral >= 100%: conserva el bonus de moral positiva.
+    """
+    morale = float(morale)
+
+    if morale <= 0.20:
+        return 0.90
+
+    if morale < 1.0:
+        return 0.90 + ((morale - 0.20) / 0.80) * 0.10
+
+    return morale
+
+
 def calculate_damage(attackers, defenders, morale):
     if not attackers or not defenders:
         return 0.0
 
+    multiplier = morale_damage_multiplier(morale)
+
     return max(
         0.0,
-        army_power(attackers, "attack") * float(morale),
+        army_power(attackers, "attack") * multiplier,
     )
 
 
@@ -213,7 +234,13 @@ def aggregate_combat_units(units):
 
 
 def resolve_volley(shooters, targets, morale):
-    """Resuelve una descarga contra objetivos vivos."""
+    """
+    Resuelve una descarga contra objetivos vivos.
+
+    Los escudos se regeneran al comenzar cada ronda.
+    El daño al blindaje permanece entre rondas.
+    Una unidad es destruida cuando su blindaje llega a cero.
+    """
 
     if not shooters or not targets:
         return 0.0, targets
@@ -226,6 +253,7 @@ def resolve_volley(shooters, targets, morale):
     for target in targets:
         target.setdefault("round_shield_damage", 0.0)
         target.setdefault("round_hull_damage", 0.0)
+        target.setdefault("hull_damage", 0.0)
 
     total_damage = 0.0
     morale = max(0.0, float(morale))
@@ -243,9 +271,11 @@ def resolve_volley(shooters, targets, morale):
         if not living_indices:
             break
 
+        morale_multiplier = morale_damage_multiplier(morale)
+
         base_attack = max(
             0.0,
-            float(shooter.get("attack", 0)) * morale,
+            float(shooter.get("attack", 0)) * morale_multiplier,
         )
 
         if base_attack <= 0:
@@ -256,22 +286,9 @@ def resolve_volley(shooters, targets, morale):
             1.0 + DAMAGE_VARIATION,
         )
 
-        target_index = living_indices[
-            random.randrange(len(living_indices))
-        ]
-
+        target_index = random.randrange(len(living_indices))
+        target_index = living_indices[target_index]
         target = targets[target_index]
-
-        maximum_shield = max(
-            0.0,
-            float(target.get("shield", 0)),
-        )
-
-        if (
-            maximum_shield > 0
-            and attack < maximum_shield * 0.01
-        ):
-            continue
 
         absorbed = min(
             shield_remaining[target_index],
@@ -281,36 +298,52 @@ def resolve_volley(shooters, targets, morale):
         shield_remaining[target_index] -= absorbed
         target["round_shield_damage"] += absorbed
 
-        penetrating_damage = max(
-            0.0,
-            attack - absorbed,
-        )
-
-        target["hull_damage"] = (
-            float(target.get("hull_damage", 0))
-            + penetrating_damage
-        )
-
-        target["round_hull_damage"] += penetrating_damage
-        total_damage += attack
+        penetrating_damage = max(0.0, attack - absorbed)
 
         maximum_hull = max(
             1.0,
             float(target.get("hull", 100)),
         )
 
+        current_hull_damage = max(
+            0.0,
+            float(target.get("hull_damage", 0)),
+        )
+
         remaining_hull = max(
+            0.0,
+            maximum_hull - current_hull_damage,
+        )
+
+        actual_hull_damage = min(
+            remaining_hull,
+            penetrating_damage,
+        )
+
+        target["hull_damage"] = (
+            current_hull_damage + actual_hull_damage
+        )
+
+        target["round_hull_damage"] += actual_hull_damage
+
+        total_damage += absorbed + actual_hull_damage
+
+        if target["hull_damage"] >= maximum_hull:
+            target["destroyed"] = True
+            continue
+
+        remaining_hull_after_hit = max(
             0.0,
             maximum_hull - target["hull_damage"],
         )
 
-        if remaining_hull <= 0:
-            target["destroyed"] = True
-            continue
-
-        if remaining_hull < maximum_hull * 0.70:
-            destruction_chance = (
-                1.0 - remaining_hull / maximum_hull
+        if remaining_hull_after_hit < maximum_hull * 0.70:
+            destruction_chance = max(
+                0.0,
+                min(
+                    1.0,
+                    1.0 - remaining_hull_after_hit / maximum_hull,
+                ),
             )
 
             if random.random() < destruction_chance:
@@ -1089,6 +1122,9 @@ async def process_arrival(connection, mission):
             defender_before - len(defender_combat_units)
         )
 
+        attacker_morale_before = attacker_morale
+        defender_morale_before = defender_morale
+
         attacker_morale = update_morale(
             attacker_morale,
             attacker_losses,
@@ -1107,17 +1143,27 @@ async def process_arrival(connection, mission):
 
         round_log.append({
             "round": round_number,
+
+            # Daño real, ya modificado por moral.
             "attacker_damage": round(attacker_damage, 2),
             "defender_damage": round(defender_damage, 2),
-            **{
-                key: round(value, 2)
-                for key, value in damage_details.items()
-            },
+
             "attacker_losses": attacker_losses,
             "defender_losses": defender_losses,
+
             "attacker_remaining": len(attacker_combat_units),
             "defender_remaining": len(defender_combat_units),
+
+            "attacker_morale_start": round(attacker_morale_before, 3),
+            "attacker_morale_change": round(
+                attacker_morale - attacker_morale_before, 3
+            ),
             "attacker_morale": round(attacker_morale, 3),
+
+            "defender_morale_start": round(defender_morale_before, 3),
+            "defender_morale_change": round(
+                defender_morale - defender_morale_before, 3
+            ),
             "defender_morale": round(defender_morale, 3),
         })
 

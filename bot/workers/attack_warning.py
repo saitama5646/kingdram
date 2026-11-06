@@ -67,21 +67,27 @@ async def attack_warning_worker(bot: Bot):
                         "¡Preparad las defensas!"
                     )
 
+                    # Reclamar la alerta antes de enviarla para evitar
+                    # duplicados si el trabajador se reinicia.
+                    claimed = await connection.fetchval(
+                        """
+                        UPDATE military_missions
+                        SET warning_sent_at = NOW()
+                        WHERE id = $1
+                          AND warning_sent_at IS NULL
+                        RETURNING id
+                        """,
+                        mission["id"],
+                    )
+
+                    if not claimed:
+                        continue
+
                     try:
                         await bot.send_message(
                             int(mission["defender_owner_id"]),
                             message,
                             parse_mode="HTML",
-                        )
-
-                        await connection.execute(
-                            """
-                            UPDATE military_missions
-                            SET warning_sent_at = NOW()
-                            WHERE id = $1
-                              AND warning_sent_at IS NULL
-                            """,
-                            mission["id"],
                         )
 
                         logging.info(
@@ -90,6 +96,17 @@ async def attack_warning_worker(bot: Bot):
                         )
 
                     except Exception:
+                        # Si Telegram no recibió el mensaje, permitir
+                        # que el trabajador vuelva a intentarlo.
+                        await connection.execute(
+                            """
+                            UPDATE military_missions
+                            SET warning_sent_at = NULL
+                            WHERE id = $1
+                            """,
+                            mission["id"],
+                        )
+
                         logging.exception(
                             "No se pudo enviar la alerta de misión #%s",
                             mission["id"],
