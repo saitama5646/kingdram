@@ -25,6 +25,7 @@ from bot.keyboards.battle import (
     battle_back_keyboard,
     mission_keyboard,
     troop_selection_keyboard,
+    troop_quantity_keyboard,
     war_menu_keyboard,
     battle_history_keyboard,
     battle_report_keyboard,
@@ -74,40 +75,58 @@ async def render_troop_selection(message, state, edit=True):
 
     quantities = data.get("troop_quantities", {})
     available = data.get("troop_available", {})
+    current_unit = data.get("troop_current_unit")
 
     total_selected = sum(
         int(quantities.get(unit_type, 0))
         for unit_type in UNIT_ORDER
     )
 
-    lines = [
-        "🛡️ <b>PREPARACIÓN DEL EJÉRCITO</b>",
-        "",
-        "Selecciona las tropas que formarán tu expedición.",
-        "",
-    ]
+    if current_unit in UNIT_ORDER:
+        unit = UNITS[current_unit]
+        quantity = int(quantities.get(current_unit, 0))
+        maximum = int(available.get(current_unit, 0))
 
-    for unit_type in UNIT_ORDER:
-        unit = UNITS[unit_type]
-        quantity = int(quantities.get(unit_type, 0))
-        maximum = int(available.get(unit_type, 0))
+        text = (
+            "🛡️ <b>CONFIGURAR UNIDAD</b>\\n\\n"
+            f"{unit['emoji']} <b>{unit['name']}</b>\\n"
+            f"En tu ejército: <b>{number(quantity)}</b>\\n"
+            f"Disponibles: <b>{number(maximum)}</b>\\n\\n"
+            "Ajusta la cantidad que quieres añadir a la expedición."
+        )
+
+        keyboard = troop_quantity_keyboard(
+            current_unit,
+            quantity,
+            maximum,
+        )
+
+    else:
+        lines = [
+            "🛡️ <b>PREPARAR EJÉRCITO</b>",
+            "",
+            "Selecciona una unidad para ajustar su cantidad:",
+            "",
+        ]
+
+        for unit_type in UNIT_ORDER:
+            unit = UNITS[unit_type]
+            quantity = int(quantities.get(unit_type, 0))
+            maximum = int(available.get(unit_type, 0))
+
+            lines.append(
+                f"{unit['emoji']} <b>{unit['name']}</b>: "
+                f"{number(quantity)} / {number(maximum)}"
+            )
 
         lines.extend([
-            f"{unit['emoji']} <b>{unit['name']}</b>",
-            f"Seleccionadas: <b>{number(quantity)}</b> / {number(maximum)} disponibles",
             "",
+            "━━━━━━━━━━━━━━━━━━",
+            f"🪖 Total seleccionado: <b>{number(total_selected)}</b>",
         ])
 
-    lines.extend([
-        "━━━━━━━━━━━━━━━━━━",
-        f"🪖 Total seleccionado: <b>{number(total_selected)}</b> unidades",
-        "",
-        "Utiliza los botones para modificar las cantidades.",
-        "También puedes introducirlas manualmente.",
-    ])
-
-    text = "\n".join(lines)
-    keyboard = troop_selection_keyboard(quantities, available)
+        text = "\\n".join(lines)
+        keyboard = troop_selection_keyboard(quantities, available)
 
     if edit:
         await message.edit_text(
@@ -121,7 +140,6 @@ async def render_troop_selection(message, state, edit=True):
             reply_markup=keyboard,
             parse_mode="HTML",
         )
-
 
 async def send_selected_army(user_id, state, message):
     data = await state.get_data()
@@ -291,8 +309,35 @@ async def prepare_mission(callback: CallbackQuery, state: FSMContext):
         defender_realm_id=realm_id,
         troop_available=available,
         troop_quantities=quantities,
+        troop_current_unit=None,
     )
 
+    await callback.answer()
+    await render_troop_selection(callback.message, state)
+
+
+@router.callback_query(
+    MissionStates.selecting_troops,
+    F.data.startswith("troops:open:"),
+)
+async def open_troop_panel(callback: CallbackQuery, state: FSMContext):
+    unit_type = callback.data.split(":")[2]
+
+    if unit_type not in UNIT_ORDER:
+        await callback.answer("Unidad no válida.", show_alert=True)
+        return
+
+    await state.update_data(troop_current_unit=unit_type)
+    await callback.answer()
+    await render_troop_selection(callback.message, state)
+
+
+@router.callback_query(
+    MissionStates.selecting_troops,
+    F.data == "troops:back",
+)
+async def back_to_troop_list(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(troop_current_unit=None)
     await callback.answer()
     await render_troop_selection(callback.message, state)
 
@@ -377,6 +422,7 @@ async def troop_maximum(callback: CallbackQuery, state: FSMContext):
     F.data == "troops:manual",
 )
 async def manual_troop_selection(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(troop_current_unit=None)
     await state.set_state(MissionStates.manual_troops)
     await callback.answer()
 
@@ -445,7 +491,7 @@ async def receive_manual_troops(message: Message, state: FSMContext):
         for index, unit_type in enumerate(UNIT_ORDER)
     }
 
-    await state.update_data(troop_quantities=selected)
+    await state.update_data(troop_quantities=selected, troop_current_unit=None)
     await state.set_state(MissionStates.selecting_troops)
 
     await message.answer("Cantidades manuales cargadas.")

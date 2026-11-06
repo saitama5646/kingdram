@@ -46,6 +46,14 @@ def battle_confirm_keyboard(realm_id):
     ])
 
 
+UNIT_LABELS = {
+    "spearman": "Lancero",
+    "archer": "Arquero",
+    "cavalry": "Caballería",
+    "royal_guard": "Guardia real",
+}
+
+
 def troop_selection_keyboard(quantities, available):
     rows = []
 
@@ -55,42 +63,56 @@ def troop_selection_keyboard(quantities, available):
 
         rows.append([
             InlineKeyboardButton(
-                text="−",
-                callback_data=f"troops:change:{unit_type}:-1",
-            ),
-            InlineKeyboardButton(
-                text=f"{quantity:,}".replace(",", "."),
-                callback_data="troops:noop",
-            ),
-            InlineKeyboardButton(
-                text="+",
-                callback_data=f"troops:change:{unit_type}:1",
-            ),
+                text=f"{UNIT_LABELS[unit_type]} · {quantity}/{maximum}",
+                callback_data=f"troops:open:{unit_type}",
+            )
         ])
 
     rows.extend([
-        [
-            InlineKeyboardButton(
-                text="✍️ Cantidades manuales",
-                callback_data="troops:manual",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🚩 Enviar ejército",
-                callback_data="troops:send",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="↩ Cancelar",
-                callback_data="troops:cancel",
-            )
-        ],
+        [InlineKeyboardButton(text="✍️ Cantidades manuales", callback_data="troops:manual")],
+        [InlineKeyboardButton(text="🚩 Enviar ejército", callback_data="troops:send")],
+        [InlineKeyboardButton(text="↩ Cancelar expedición", callback_data="troops:cancel")],
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+
+def troop_quantity_keyboard(unit_type, quantity, maximum):
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="➖ 1",
+                callback_data=f"troops:change:{unit_type}:-1",
+            ),
+            InlineKeyboardButton(
+                text=f"{quantity} / {maximum}",
+                callback_data="troops:noop",
+            ),
+            InlineKeyboardButton(
+                text="➕ 1",
+                callback_data=f"troops:change:{unit_type}:1",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="➖ 10",
+                callback_data=f"troops:change:{unit_type}:-10",
+            ),
+            InlineKeyboardButton(
+                text="➕ 10",
+                callback_data=f"troops:change:{unit_type}:10",
+            ),
+            InlineKeyboardButton(
+                text="Máximo",
+                callback_data=f"troops:max:{unit_type}",
+            ),
+        ],
+        [InlineKeyboardButton(text="⬅ Volver a unidades", callback_data="troops:back")],
+        [InlineKeyboardButton(text="🚩 Enviar ejército", callback_data="troops:send")],
+        [InlineKeyboardButton(text="↩ Cancelar expedición", callback_data="troops:cancel")],
+    ]
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def battle_back_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
