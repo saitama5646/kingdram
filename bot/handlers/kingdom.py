@@ -57,7 +57,7 @@ async def ensure_realm_resources(connection, realm_id):
             gold,
             food
         )
-        VALUES ($1, 1250, 850, 2400, 1600)
+        VALUES ($1, 1800, 1200, 500, 1600)
         ON CONFLICT (realm_id) DO NOTHING
         """,
         realm_id,

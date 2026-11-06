@@ -1,7 +1,7 @@
 BASE_CAPACITY = {
-    "wood": 15000,
+    "wood": 20000,
     "stone": 15000,
-    "gold": 12000,
+    "gold": 8000,
     "food": 12000,
 }
 

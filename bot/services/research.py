@@ -214,7 +214,11 @@ def get_research_cost(research_type, target_level):
     multiplier = COST_GROWTH ** (target_level - 1)
 
     return {
-        resource: ceil(amount * multiplier)
+        resource: ceil(
+            amount * multiplier * (
+                0.55 if resource == "gold" else 1
+            )
+        )
         for resource, amount in research["base_cost"].items()
     }
 
