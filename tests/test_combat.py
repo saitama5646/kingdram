@@ -724,6 +724,26 @@ class CombatTests(unittest.TestCase):
             30,
         )
 
+        self.assertEqual(
+            details["attacker_hull_damage_received"],
+            30,
+        )
+
+        self.assertEqual(
+            details["defender_hull_damage_received"],
+            50,
+        )
+
+        self.assertEqual(
+            details["attacker_hull_damage_dealt"],
+            50,
+        )
+
+        self.assertEqual(
+            details["defender_hull_damage_dealt"],
+            30,
+        )
+
     def test_destroyed_units_do_not_receive_more_shots(self):
         shooters = [
             {"attack": 100, "destroyed": False},

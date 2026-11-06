@@ -515,6 +515,8 @@ async def finish_returning_mission(
     connection,
     mission_id,
 ):
+    # Bloquear la misión impide que dos procesos entreguen
+    # simultáneamente las mismas tropas.
     mission = await connection.fetchrow(
         """
         SELECT attacker_realm_id
@@ -529,18 +531,71 @@ async def finish_returning_mission(
     if not mission:
         return False
 
+    realm_id = int(mission["attacker_realm_id"])
+
+    # Serializar las entregas de tropas al mismo reino.
+    await connection.fetchrow(
+        """
+        SELECT id
+        FROM realms
+        WHERE id = $1
+        FOR UPDATE
+        """,
+        realm_id,
+    )
+
     troops = await connection.fetch(
         """
-        SELECT unit_type, surviving_quantity
+        SELECT
+            unit_type,
+            quantity,
+            surviving_quantity
         FROM military_mission_units
         WHERE mission_id = $1
-          AND surviving_quantity > 0
         FOR UPDATE
         """,
         mission_id,
     )
 
+    # Validar todas las unidades antes de comenzar la entrega.
+    # Así una cantidad corrupta no provoca una devolución parcial.
+    validated_troops = []
+
     for troop in troops:
+        unit_type = troop["unit_type"]
+        original_quantity = int(troop["quantity"])
+        surviving_quantity = int(
+            troop["surviving_quantity"]
+        )
+
+        if unit_type not in UNITS:
+            raise ValueError(
+                f"Tipo de unidad inválido en misión "
+                f"{mission_id}: {unit_type}"
+            )
+
+        if original_quantity <= 0:
+            raise ValueError(
+                f"Cantidad original inválida en misión "
+                f"{mission_id}: {original_quantity}"
+            )
+
+        if not (
+            0 <= surviving_quantity <= original_quantity
+        ):
+            raise ValueError(
+                f"Supervivientes inválidos en misión "
+                f"{mission_id}, unidad {unit_type}: "
+                f"{surviving_quantity}/{original_quantity}"
+            )
+
+        if surviving_quantity > 0:
+            validated_troops.append(
+                (unit_type, surviving_quantity)
+            )
+
+    # La entrega se realiza dentro de la transacción del worker.
+    for unit_type, surviving_quantity in validated_troops:
         await connection.execute(
             """
             INSERT INTO army (
@@ -553,19 +608,26 @@ async def finish_returning_mission(
             DO UPDATE SET quantity =
                 army.quantity + EXCLUDED.quantity
             """,
-            mission["attacker_realm_id"],
-            troop["unit_type"],
-            troop["surviving_quantity"],
+            realm_id,
+            unit_type,
+            surviving_quantity,
         )
 
-    await connection.execute(
+    result = await connection.execute(
         """
         UPDATE military_missions
         SET status = 'completed',
             completed_at = NOW()
         WHERE id = $1
+          AND status = 'returning'
         """,
         mission_id,
     )
+
+    if result != "UPDATE 1":
+        raise RuntimeError(
+            f"No se pudo completar la misión {mission_id}. "
+            f"Resultado SQL: {result}"
+        )
 
     return True

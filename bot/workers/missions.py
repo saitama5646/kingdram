@@ -784,6 +784,50 @@ def resolve_battle_round_detailed(
             * int(unit.get("quantity", 1))
             for unit in defenders
         ),
+
+        # Daño recibido: valores explícitos por ejército.
+        "attacker_shield_damage_received": sum(
+            float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in attackers
+        ),
+        "attacker_hull_damage_received": sum(
+            float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in attackers
+        ),
+        "defender_shield_damage_received": sum(
+            float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in defenders
+        ),
+        "defender_hull_damage_received": sum(
+            float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in defenders
+        ),
+
+        # Daño causado: perspectiva del ejército que dispara.
+        "attacker_shield_damage_dealt": sum(
+            float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in defenders
+        ),
+        "attacker_hull_damage_dealt": sum(
+            float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in defenders
+        ),
+        "defender_shield_damage_dealt": sum(
+            float(unit.get("round_shield_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in attackers
+        ),
+        "defender_hull_damage_dealt": sum(
+            float(unit.get("round_hull_damage", 0))
+            * int(unit.get("quantity", 1))
+            for unit in attackers
+        ),
     }
 
     attackers_after = [
