@@ -299,9 +299,14 @@ def get_research_cost(research_type, target_level):
 def get_research_time(research_type, target_level):
     research = RESEARCH[research_type]
 
+    # Las investigaciones requieren una inversión
+    # temporal mucho mayor que en el balance anterior.
+    RESEARCH_TIME_MULTIPLIER = 5
+
     return ceil(
-        research["base_time"] *
-        (TIME_GROWTH ** (target_level - 1))
+        research["base_time"]
+        * (TIME_GROWTH ** (target_level - 1))
+        * RESEARCH_TIME_MULTIPLIER
     )
 
 

@@ -43,7 +43,7 @@ async def military_worker(bot: Bot):
                 try:
                     await bot.send_message(
                         item["owner_id"],
-                        "⚔️ <b>¡Entrenamiento finalizado!</b>\\n\\n"
+                        "⚔️ <b>¡Entrenamiento finalizado!</b>\n\n"
                         f"En <b>{item['realm_name']}</b> "
                         f"se han incorporado "
                         f"<b>{item['quantity']}</b> "

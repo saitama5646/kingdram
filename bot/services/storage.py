@@ -5,9 +5,9 @@ BASE_CAPACITY = {
     "food": 12000,
 }
 
-WAREHOUSE_BONUS = 10000
-TREASURY_BONUS = 10000
-GRANARY_BONUS = 15000
+# Multiplicador de capacidad alineado con
+# el crecimiento de los costes de construcción.
+STORAGE_CAPACITY_GROWTH = 1.55
 
 
 def get_storage_capacity(buildings):
@@ -21,21 +21,21 @@ def get_storage_capacity(buildings):
     granary_level = levels.get("granary", 0)
 
     return {
-        "wood": (
+        "wood": int(
             BASE_CAPACITY["wood"]
-            + warehouse_level * WAREHOUSE_BONUS
+            * STORAGE_CAPACITY_GROWTH ** warehouse_level
         ),
-        "stone": (
+        "stone": int(
             BASE_CAPACITY["stone"]
-            + warehouse_level * WAREHOUSE_BONUS
+            * STORAGE_CAPACITY_GROWTH ** warehouse_level
         ),
-        "gold": (
+        "gold": int(
             BASE_CAPACITY["gold"]
-            + treasury_level * TREASURY_BONUS
+            * STORAGE_CAPACITY_GROWTH ** treasury_level
         ),
-        "food": (
+        "food": int(
             BASE_CAPACITY["food"]
-            + granary_level * GRANARY_BONUS
+            * STORAGE_CAPACITY_GROWTH ** granary_level
         ),
     }
 

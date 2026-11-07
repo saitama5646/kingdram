@@ -36,10 +36,10 @@ class BuildingDamageEconomyTests(unittest.TestCase):
 
         capacity = get_storage_capacity(buildings)
 
-        self.assertEqual(capacity["wood"], 30000)
-        self.assertEqual(capacity["stone"], 25000)
-        self.assertEqual(capacity["gold"], 28000)
-        self.assertEqual(capacity["food"], 27000)
+        self.assertEqual(capacity["wood"], 31000)
+        self.assertEqual(capacity["stone"], 23250)
+        self.assertEqual(capacity["gold"], 19220)
+        self.assertEqual(capacity["food"], 18600)
 
     def test_fully_damaged_building_has_no_production(self):
         buildings = [

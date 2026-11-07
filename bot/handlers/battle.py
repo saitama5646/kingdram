@@ -88,10 +88,10 @@ async def render_troop_selection(message, state, edit=True):
         maximum = int(available.get(current_unit, 0))
 
         text = (
-            "🛡️ <b>CONFIGURAR UNIDAD</b>\\n\\n"
-            f"{unit['emoji']} <b>{unit['name']}</b>\\n"
-            f"En tu ejército: <b>{number(quantity)}</b>\\n"
-            f"Disponibles: <b>{number(maximum)}</b>\\n\\n"
+            "🛡️ <b>CONFIGURAR UNIDAD</b>\n\n"
+            f"{unit['emoji']} <b>{unit['name']}</b>\n"
+            f"En tu ejército: <b>{number(quantity)}</b>\n"
+            f"Disponibles: <b>{number(maximum)}</b>\n\n"
             "Ajusta la cantidad que quieres añadir a la expedición."
         )
 
@@ -125,7 +125,7 @@ async def render_troop_selection(message, state, edit=True):
             f"🪖 Total seleccionado: <b>{number(total_selected)}</b>",
         ])
 
-        text = "\\n".join(lines)
+        text = "\n".join(lines)
         keyboard = troop_selection_keyboard(quantities, available)
 
     if edit:
@@ -226,10 +226,10 @@ async def open_campaigns(callback: CallbackQuery):
     await callback.answer()
 
     await callback.message.edit_text(
-        "⚔ <b>CAMPAÑAS MILITARES</b>\\n\\n"
-        "Los ataques se inician desde el mapa de territorios.\\n\\n"
+        "⚔ <b>CAMPAÑAS MILITARES</b>\n\n"
+        "Los ataques se inician desde el mapa de territorios.\n\n"
         "Explora un territorio, selecciona un reino enemigo "
-        "y pulsa <b>Atacar reino</b>.\\n\\n"
+        "y pulsa <b>Atacar reino</b>.\n\n"
         "Desde aquí puedes consultar tus expediciones "
         "y los informes de batalla.",
         reply_markup=war_menu_keyboard(),
@@ -1097,12 +1097,12 @@ async def propose_vassalage_handler(callback: CallbackQuery):
         await callback.bot.send_message(
             int(report["defender_owner_id"]),
             (
-                "👑 <b>PROPUESTA DE VASALLAJE</b>\\n\\n"
+                "👑 <b>PROPUESTA DE VASALLAJE</b>\n\n"
                 f"🏰 <b>{escape(names['attacker_name'])}</b> "
-                "te propone convertirte en su vasallo.\\n\\n"
-                f"🏰 Tu reino: <b>{escape(names['defender_name'])}</b>\\n"
+                "te propone convertirte en su vasallo.\n\n"
+                f"🏰 Tu reino: <b>{escape(names['defender_name'])}</b>\n"
                 f"📉 Destrucción de infraestructura: "
-                f"<b>{float(report['infrastructure_damage']) * 100:.1f}%</b>\\n\\n"
+                f"<b>{float(report['infrastructure_damage']) * 100:.1f}%</b>\n\n"
                 "Puedes aceptar o rechazar la propuesta."
             ),
             reply_markup=InlineKeyboardMarkup(
