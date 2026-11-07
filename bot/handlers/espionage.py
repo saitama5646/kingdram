@@ -281,7 +281,6 @@ async def mission_handler(callback: CallbackQuery):
     try:
         _, _, target_id, mission_type = callback.data.split(":")
         target_id = int(target_id)
-
     except (ValueError, IndexError):
         await callback.answer(
             "Misión inválida.",
@@ -289,24 +288,52 @@ async def mission_handler(callback: CallbackQuery):
         )
         return
 
-    mission_name = MISSION_TYPES.get(
-        mission_type,
-        mission_type,
+    if mission_type not in MISSION_TYPES:
+        await callback.answer(
+            "Tipo de misión desconocido.",
+            show_alert=True,
+        )
+        return
+
+    data = await get_spy_dashboard(
+        callback.from_user.id,
     )
+
+    if not data:
+        await callback.answer(
+            "Primero debes fundar un reino.",
+            show_alert=True,
+        )
+        return
+
+    available_spies = int(data["spies"])
+    mission_name = MISSION_TYPES[mission_type]
 
     await callback.answer()
 
+    if available_spies < 1:
+        message = (
+            "🕵 <b>PREPARAR MISIÓN</b>\\n\\n"
+            f"📋 Tipo: <b>{escape(mission_name)}</b>\\n\\n"
+            "No tienes espías disponibles. "
+            "Entrena agentes antes de iniciar la misión."
+        )
+    else:
+        message = (
+            "🕵 <b>PREPARAR MISIÓN</b>\\n\\n"
+            f"📋 Tipo: <b>{escape(mission_name)}</b>\\n"
+            f"🕵 Espías disponibles: <b>{available_spies}</b>\\n\\n"
+            "Selecciona cuántos espías enviar."
+        )
+
     await callback.message.edit_text(
-        "🕵 <b>PREPARAR MISIÓN</b>\n\n"
-        f"📋 Tipo: <b>{escape(mission_name)}</b>\n\n"
-        "Selecciona cuántos espías enviar.",
+        message,
         reply_markup=mission_quantity_keyboard(
             target_id,
             mission_type,
         ),
         parse_mode="HTML",
     )
-
 
 @router.callback_query(
     F.data.startswith("espionage:quantity:")
