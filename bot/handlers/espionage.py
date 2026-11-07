@@ -247,8 +247,8 @@ async def espionage_from_map_handler(
     await callback.answer()
 
     await callback.message.edit_text(
-        "🕵 <b>ESPIONAJE DEL REINO</b>\\n\\n"
-        f"🎯 Objetivo: <b>{escape(target['name'])}</b>\\n\\n"
+        "🕵 <b>ESPIONAJE DEL REINO</b>\n\n"
+        f"🎯 Objetivo: <b>{escape(target['name'])}</b>\n\n"
         "Selecciona la información que deseas obtener.",
         reply_markup=target_keyboard(target_id),
         parse_mode="HTML",
@@ -313,16 +313,16 @@ async def mission_handler(callback: CallbackQuery):
 
     if available_spies < 1:
         message = (
-            "🕵 <b>PREPARAR MISIÓN</b>\\n\\n"
-            f"📋 Tipo: <b>{escape(mission_name)}</b>\\n\\n"
+            "🕵 <b>PREPARAR MISIÓN</b>\n\n"
+            f"📋 Tipo: <b>{escape(mission_name)}</b>\n\n"
             "No tienes espías disponibles. "
             "Entrena agentes antes de iniciar la misión."
         )
     else:
         message = (
-            "🕵 <b>PREPARAR MISIÓN</b>\\n\\n"
-            f"📋 Tipo: <b>{escape(mission_name)}</b>\\n"
-            f"🕵 Espías disponibles: <b>{available_spies}</b>\\n\\n"
+            "🕵 <b>PREPARAR MISIÓN</b>\n\n"
+            f"📋 Tipo: <b>{escape(mission_name)}</b>\n"
+            f"🕵 Espías disponibles: <b>{available_spies}</b>\n\n"
             "Selecciona cuántos espías enviar."
         )
 

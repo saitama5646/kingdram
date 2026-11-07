@@ -47,7 +47,7 @@ async def military_worker(bot: Bot):
                         f"En <b>{item['realm_name']}</b> "
                         f"se han incorporado "
                         f"<b>{item['quantity']}</b> "
-                        f"{unit['name']}.\\n\\n"
+                        f"{unit['name']}.\n\n"
                         "Las tropas ya están disponibles "
                         "en tu ejército."
                     )
