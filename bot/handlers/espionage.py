@@ -592,60 +592,11 @@ async def report_detail_handler(
             intelligence = {}
 
     if report["success"] and intelligence:
-        lines.append("<b>INFORMACIÓN OBTENIDA</b>")
+        from bot.services.espionage_format import format_intelligence
 
-        labels = {
-            "wood": "Madera",
-            "stone": "Piedra",
-            "gold": "Oro",
-            "food": "Alimentos",
-            "army": "Ejército",
-            "buildings": "Edificios",
-            "research": "Investigaciones",
-        }
-
-        for key, value in intelligence.items():
-            label = labels.get(key, key.title())
-
-            if isinstance(value, list):
-                lines.append(
-                    f"\n<b>{escape(label)}</b>"
-                )
-
-                if not value:
-                    lines.append("• No se encontraron datos.")
-
-                for item in value:
-                    if isinstance(item, dict):
-                        details = " — ".join(
-                            f"{escape(str(k))}: "
-                            f"{escape(str(v))}"
-                            for k, v in item.items()
-                        )
-
-                        lines.append(f"• {details}")
-
-                    else:
-                        lines.append(
-                            f"• {escape(str(item))}"
-                        )
-
-            elif isinstance(value, dict):
-                lines.append(
-                    f"\n<b>{escape(label)}</b>"
-                )
-
-                for subkey, subvalue in value.items():
-                    lines.append(
-                        f"• {escape(str(subkey))}: "
-                        f"{escape(str(subvalue))}"
-                    )
-
-            else:
-                lines.append(
-                    f"• <b>{escape(label)}:</b> "
-                    f"{escape(str(value))}"
-                )
+        lines.extend(
+            format_intelligence(intelligence)
+        )
 
     elif not report["success"]:
         lines.append(

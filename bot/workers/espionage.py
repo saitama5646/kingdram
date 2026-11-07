@@ -314,23 +314,13 @@ async def resolve_espionage_mission(bot: Bot, mission_id):
             )
 
             if notification["success"]:
-                message += "\n<b>INFORMACIÓN OBTENIDA</b>\n"
+                from bot.services.espionage_format import format_intelligence
 
-                labels = {
-                    "wood": "Madera",
-                    "stone": "Piedra",
-                    "gold": "Oro",
-                    "food": "Alimentos",
-                    "army": "Ejército",
-                    "buildings": "Edificios",
-                    "research": "Investigaciones",
-                }
-
-                for key, value in notification["intelligence"].items():
-                    message += (
-                        f"• <b>{labels.get(key, key.title())}</b>: "
-                        f"{value}\n"
+                message += "\n".join(
+                    format_intelligence(
+                        notification["intelligence"]
                     )
+                ) + "\n"
 
             await bot.send_message(
                 notification["owner_id"],
