@@ -318,7 +318,6 @@ async def mission_quantity_handler(
         (
             _,
             _,
-            _,
             target_id,
             mission_type,
             quantity,
@@ -337,6 +336,13 @@ async def mission_quantity_handler(
     if quantity not in (1, 5, 10):
         await callback.answer(
             "Puedes enviar 1, 5 o 10 espías.",
+            show_alert=True,
+        )
+        return
+
+    if mission_type not in MISSION_TYPES:
+        await callback.answer(
+            "Tipo de misión desconocido.",
             show_alert=True,
         )
         return
