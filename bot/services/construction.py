@@ -43,8 +43,9 @@ BUILDINGS = {
         "icon": "📚",
         "description": (
             "Centro de conocimiento del reino. "
-            "Cada nivel reduce un 2% el tiempo de investigación, "
-            "hasta un máximo del 20%."
+            "Cada nivel reduce un 8% el tiempo de investigación, "
+            "hasta un máximo del 40%. Su mejora requiere "
+            "una inversión extraordinaria de recursos."
         ),
         "resource": None,
         "base_cost": {
@@ -108,24 +109,62 @@ def get_upgrade_cost(building_type, level):
     building = BUILDINGS[building_type]
     multiplier = BUILDING_COST_GROWTH ** (level - 1)
 
-    return {
+    costs = {
         resource: int(amount * 1.15 * multiplier)
         for resource, amount in building["base_cost"].items()
     }
 
+    resource = building["resource"]
+
+    if resource and building["production"] > 0:
+        previous = get_production(
+            building_type,
+            max(0, level - 1),
+        )
+
+        current = get_production(
+            building_type,
+            level,
+        )
+
+        additional = max(0, current - previous)
+
+        # Objetivo de amortización: 72 horas.
+        target_cost = int(additional * 4320)
+
+        costs[resource] = max(
+            costs.get(resource, 0),
+            target_cost,
+        )
+
+    return costs
+
+
 
 def get_upgrade_time(building_type, level):
     building = BUILDINGS[building_type]
+
+    if building_type == "academy":
+        # La Academia también exige más tiempo de construcción.
+        return int(
+            building["base_time"] * 1.50 * (2.00 ** (level - 1))
+        )
 
     return int(
         building["base_time"] * 1.20 * (1.70 ** (level - 1))
     )
 
 
+PRODUCTION_GROWTH = 1.65
+
+
 def get_production(building_type, level):
     building = BUILDINGS[building_type]
 
-    if not building["resource"]:
+    if not building["resource"] or level <= 0:
         return 0
 
-    return int(building["production"] * level)
+    return int(
+        building["production"] *
+        (PRODUCTION_GROWTH ** (level - 1))
+    )
