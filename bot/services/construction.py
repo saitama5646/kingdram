@@ -1,4 +1,4 @@
-BUILDING_COST_GROWTH = 1.55
+BUILDING_COST_GROWTH = 1.70
 
 
 BUILDINGS = {
@@ -37,6 +37,24 @@ BUILDINGS = {
         "base_cost": {"wood": 250, "stone": 200, "gold": 50},
         "base_time": 180,
         "production": 2,
+    },
+    "academy": {
+        "name": "Academia",
+        "icon": "📚",
+        "description": (
+            "Centro de conocimiento del reino. "
+            "Cada nivel reduce un 2% el tiempo de investigación, "
+            "hasta un máximo del 20%."
+        ),
+        "resource": None,
+        "base_cost": {
+            "wood": 500,
+            "stone": 450,
+            "gold": 250,
+            "food": 100,
+        },
+        "base_time": 480,
+        "production": 0,
     },
     "barracks": {
         "name": "Cuartel",
@@ -91,7 +109,7 @@ def get_upgrade_cost(building_type, level):
     multiplier = BUILDING_COST_GROWTH ** (level - 1)
 
     return {
-        resource: int(amount * multiplier)
+        resource: int(amount * 1.15 * multiplier)
         for resource, amount in building["base_cost"].items()
     }
 
@@ -100,7 +118,7 @@ def get_upgrade_time(building_type, level):
     building = BUILDINGS[building_type]
 
     return int(
-        building["base_time"] * (1.8 ** (level - 1))
+        building["base_time"] * 1.20 * (1.70 ** (level - 1))
     )
 
 

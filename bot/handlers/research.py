@@ -32,6 +32,7 @@ EFFECT_LABELS = {
     "military_attack": "Ataque militar",
     "military_defense": "Defensa militar",
     "construction_speed": "Velocidad de construcción",
+    "research_speed": "Velocidad de investigación",
     "training_speed": "Velocidad de entrenamiento",
 }
 
@@ -374,9 +375,17 @@ async def research_detail_handler(callback: CallbackQuery):
         target_level,
     )
 
+    academy_level = int(buildings.get("academy", 0))
+
     duration = get_research_time(
         research_type,
         target_level,
+        academy_level,
+    )
+
+    academy_bonus = min(
+        20,
+        academy_level * 2,
     )
 
     missing = []
@@ -469,6 +478,9 @@ async def research_detail_handler(callback: CallbackQuery):
             else "❌ <b>Recursos insuficientes</b>"
         ),
         "",
+        f"🏛️ Academia: <b>nivel {academy_level}</b>",
+        f"⏱ Bonificación de investigación: "
+        f"<b>{academy_bonus}%</b>",
         f"⏱ Duración: <b>{duration // 60} min "
         f"{duration % 60} s</b>",
         "",
@@ -626,9 +638,14 @@ async def start_research_handler(callback: CallbackQuery):
                         target_level,
                     )
 
+                    academy_level = int(
+                        buildings.get("academy", 0)
+                    )
+
                     duration = get_research_time(
                         research_type,
                         target_level,
+                        academy_level,
                     )
 
                     resources = await connection.fetchrow(

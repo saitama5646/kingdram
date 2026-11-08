@@ -296,17 +296,27 @@ def get_research_cost(research_type, target_level):
     }
 
 
-def get_research_time(research_type, target_level):
+def get_research_time(research_type, target_level, academy_level=0):
     research = RESEARCH[research_type]
 
     # Las investigaciones requieren una inversión
     # temporal mucho mayor que en el balance anterior.
     RESEARCH_TIME_MULTIPLIER = 5
 
-    return ceil(
+    base_duration = ceil(
         research["base_time"]
         * (TIME_GROWTH ** (target_level - 1))
         * RESEARCH_TIME_MULTIPLIER
+    )
+
+    academy_level = max(0, int(academy_level))
+
+    # 2% por nivel, limitado al 20%.
+    academy_bonus = min(0.20, academy_level * 0.02)
+
+    return max(
+        1,
+        ceil(base_duration / (1 + academy_bonus)),
     )
 
 
