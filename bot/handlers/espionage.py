@@ -612,6 +612,18 @@ async def report_detail_handler(
 
     builder = InlineKeyboardBuilder()
 
+    if (
+        report["success"]
+        and report["mission_type"] == "military"
+        and intelligence.get("army")
+    ):
+        builder.button(
+            text="⚔️ Simular batalla con esta inteligencia",
+            callback_data=(
+                f"combat_simulator:spy:{report_id}"
+            ),
+        )
+
     builder.button(
         text="↩ Volver a informes",
         callback_data="espionage:reports",

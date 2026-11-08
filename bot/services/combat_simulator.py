@@ -74,6 +74,12 @@ def simulate_battle(
             "La cantidad de simulaciones debe ser positiva."
         )
 
+    if seed is None:
+        seed = random.SystemRandom().randrange(
+            1,
+            2**63,
+        )
+
     attackers_original = validate_roster(
         attacker_roster,
         "Atacante",

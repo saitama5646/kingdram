@@ -84,6 +84,12 @@ def main_menu_keyboard():
             ],
             [
                 InlineKeyboardButton(
+                    text="🧪 Simulador de combate",
+                    callback_data="combat_simulator:start",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="👑 Diplomacia",
                     callback_data="diplomacy",
                 ),
