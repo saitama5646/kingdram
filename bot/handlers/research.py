@@ -384,8 +384,8 @@ async def research_detail_handler(callback: CallbackQuery):
     )
 
     academy_bonus = min(
-        20,
-        academy_level * 2,
+        40,
+        academy_level * 8,
     )
 
     missing = []

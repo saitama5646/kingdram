@@ -51,6 +51,27 @@ UNITS = {
         "seconds": 60,
         "barracks": 4,
     },
+    "cargo_caravan": {
+        "name": "Caravana de carga",
+        "emoji": "📦",
+        "description": (
+            "Unidad logística especializada en transportar "
+            "recursos entre reinos y apoyar saqueos. "
+            "No participa en combate."
+        ),
+        "attack": 0,
+        "defense": 0,
+        "shield": 0,
+        "hull": 100,
+        "wood": 180,
+        "stone": 120,
+        "gold": 220,
+        "food": 160,
+        "seconds": 75,
+        "barracks": 2,
+        "speed": 1,
+        "cargo_capacity": 1000,
+    },
     "royal_guard": {
         "name": "Guardia real",
         "emoji": "🛡️",

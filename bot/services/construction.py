@@ -9,7 +9,7 @@ BUILDINGS = {
         "resource": "wood",
         "base_cost": {"wood": 150, "stone": 80, "gold": 30},
         "base_time": 60,
-        "production": 18,
+        "production": 3,
     },
     "quarry": {
         "name": "Cantera",
@@ -116,7 +116,7 @@ def get_upgrade_cost(building_type, level):
 
     resource = building["resource"]
 
-    if resource and building["production"] > 0:
+    if resource and building["production"] > 0 and level > 1:
         previous = get_production(
             building_type,
             max(0, level - 1),
@@ -129,8 +129,8 @@ def get_upgrade_cost(building_type, level):
 
         additional = max(0, current - previous)
 
-        # Objetivo de amortización: 72 horas.
-        target_cost = int(additional * 4320)
+        # Objetivo de amortización: 24 horas.
+        target_cost = int(additional * 1440)
 
         costs[resource] = max(
             costs.get(resource, 0),
@@ -155,7 +155,7 @@ def get_upgrade_time(building_type, level):
     )
 
 
-PRODUCTION_GROWTH = 1.65
+PRODUCTION_GROWTH = 1.50
 
 
 def get_production(building_type, level):

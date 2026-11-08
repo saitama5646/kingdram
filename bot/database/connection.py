@@ -21,6 +21,7 @@ async def connect_database():
 
     schema_files = [
         BASE_DIR / "bot" / "database" / "schema.sql",
+        BASE_DIR / "bot" / "database" / "economy_balance.sql",
         BASE_DIR / "bot" / "database" / "systems.sql",
         BASE_DIR / "bot" / "database" / "battle.sql",
         BASE_DIR / "bot" / "database" / "world.sql",
@@ -32,6 +33,7 @@ async def connect_database():
         BASE_DIR / "bot" / "database" / "vassalage.sql",
         BASE_DIR / "bot" / "database" / "combat_repairs.sql",
         BASE_DIR / "bot" / "database" / "espionage.sql",
+        BASE_DIR / "bot" / "database" / "logistics.sql",
     ]
 
     try:

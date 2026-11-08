@@ -31,6 +31,7 @@ from bot.handlers.combat_simulator import (
 )
 from bot.handlers.diplomacy import router as diplomacy_router
 from bot.handlers.treaties import router as treaties_router
+from bot.handlers.transport import router as transport_router
 
 from bot.workers.production import production_worker
 from bot.workers.construction import construction_worker
@@ -39,6 +40,7 @@ from bot.workers.research import research_worker
 from bot.workers.missions import missions_worker
 from bot.workers.attack_warning import attack_warning_worker
 from bot.workers.espionage import espionage_worker
+from bot.services.transport import logistics_worker
 
 
 WORKER_RESTART_DELAY = 5
@@ -116,6 +118,7 @@ async def main():
         dp.include_router(menu_router)
         dp.include_router(diplomacy_router)
         dp.include_router(treaties_router)
+        dp.include_router(transport_router)
         dp.include_router(dashboard_router)
         dp.include_router(kingdom_router)
         dp.include_router(buildings_router)

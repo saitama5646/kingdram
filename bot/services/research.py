@@ -311,8 +311,8 @@ def get_research_time(research_type, target_level, academy_level=0):
 
     academy_level = max(0, int(academy_level))
 
-    # 2% por nivel, limitado al 20%.
-    academy_bonus = min(0.20, academy_level * 0.02)
+    # 8% por nivel, limitado al 40%.
+    academy_bonus = min(0.40, academy_level * 0.08)
 
     return max(
         1,
